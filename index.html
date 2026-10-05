@@ -1383,7 +1383,10 @@
             continue;
           }
           const pw = getUploadPassword();
-          if (!pw) return flashStatus("ERR: NO PASSWORD", 2500);
+          if (!pw) {
+            alert("No password entered, upload cancelled.");
+            return flashStatus("ERR: NO PASSWORD", 2500);
+          }
           const rec = {
             name: f.name,
             type: f.type,
@@ -1392,9 +1395,12 @@
           };
           try {
             flashStatus("STATUS: UPLOADING", 60000);
-            const { upload } = await import(
-              "https://esm.sh/@vercel/blob/client"
-            );
+            let upload;
+            try {
+              ({ upload } = await import("https://esm.sh/@vercel/blob/client"));
+            } catch (ie) {
+              throw new Error("Could not load upload library: " + ie.message);
+            }
             const blob = await upload("audio/" + f.name, f, {
               access: "public",
               contentType: audioMime(f),
@@ -1408,6 +1414,7 @@
             if (/unauthor/i.test(String(e && e.message)))
               localStorage.removeItem(PW_KEY);
             flashStatus("ERR: UPLOAD FAILED", 3000);
+            alert("UPLOAD ERROR: " + (e && e.message ? e.message : e));
             continue;
           }
           tracks.push(rec);
@@ -1517,7 +1524,11 @@
         this.value = ""; // allow re-selecting the same file later
         if (!files.length) return;
         playTactileFeedback("beep");
-        await addFiles(files);
+        try {
+          await addFiles(files);
+        } catch (e) {
+          alert("ERROR: " + (e && e.message ? e.message : e));
+        }
       });
 
       // Transport buttons
