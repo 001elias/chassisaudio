@@ -1409,7 +1409,7 @@
             // 2) upload straight from the browser to Vercel Blob
             let put;
             try {
-              ({ put } = await import("https://esm.sh/@vercel/blob/client"));
+              ({ put } = await import("https://esm.sh/@vercel/blob@1.1.0/client?bundle"));
             } catch (ie) {
               throw new Error("Could not load upload library: " + ie.message);
             }
