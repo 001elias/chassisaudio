@@ -1,4 +1,4 @@
-import { handleUpload } from "@vercel/blob/client";
+import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 
 async function readBody(req) {
   if (req.body !== undefined && req.body !== null && req.body !== "") {
@@ -11,31 +11,26 @@ async function readBody(req) {
 }
 
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: `Use POST (got ${req.method})` });
+  }
   try {
-    const body = await readBody(req);
-    if (!body) {
-      return res.status(400).json({
-        error: `Empty body (method ${req.method}, content-type ${req.headers["content-type"]})`,
-      });
+    const { pathname, password } = (await readBody(req)) || {};
+    if (password !== process.env.UPLOAD_PASSWORD) {
+      return res.status(401).json({ error: "Unauthorized (wrong password)" });
     }
-    const json = await handleUpload({
-      body,
-      request: req,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
-        if (clientPayload !== process.env.UPLOAD_PASSWORD) {
-          throw new Error("Unauthorized");
-        }
-        return {
-          allowedContentTypes: ["audio/*"],
-          maximumSizeInBytes: 200 * 1024 * 1024,
-          addRandomSuffix: false,
-          allowOverwrite: true,
-        };
-      },
-      onUploadCompleted: async () => {},
+    if (typeof pathname !== "string" || !pathname.startsWith("audio/")) {
+      return res.status(400).json({ error: "Bad pathname" });
+    }
+    const clientToken = await generateClientTokenFromReadWriteToken({
+      pathname,
+      allowedContentTypes: ["audio/*"],
+      maximumSizeInBytes: 200 * 1024 * 1024,
+      addRandomSuffix: false,
+      allowOverwrite: true,
     });
-    res.status(200).json(json);
+    res.status(200).json({ clientToken });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(500).json({ error: e.message });
   }
 }
