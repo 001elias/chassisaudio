@@ -26,6 +26,7 @@ export default async function handler(req, res) {
       pathname,
       allowedContentTypes: ["audio/*"],
       maximumSizeInBytes: 200 * 1024 * 1024,
+      validUntil: Date.now() + 60 * 60 * 1000,
       addRandomSuffix: false,
       allowOverwrite: true,
     });
