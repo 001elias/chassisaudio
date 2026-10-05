@@ -1395,17 +1395,28 @@
           };
           try {
             flashStatus("STATUS: UPLOADING", 60000);
-            let upload;
+            const pathname = "audio/" + f.name;
+            const mime = audioMime(f);
+            // 1) ask our own server for a short-lived upload token (plain POST)
+            const tr = await fetch("/api/upload", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ pathname, password: pw, contentType: mime }),
+            });
+            const td = await tr.json().catch(() => ({}));
+            if (!tr.ok)
+              throw new Error(td.error || "token request failed (" + tr.status + ")");
+            // 2) upload straight from the browser to Vercel Blob
+            let put;
             try {
-              ({ upload } = await import("https://esm.sh/@vercel/blob/client"));
+              ({ put } = await import("https://esm.sh/@vercel/blob/client"));
             } catch (ie) {
               throw new Error("Could not load upload library: " + ie.message);
             }
-            const blob = await upload("audio/" + f.name, f, {
+            const blob = await put(pathname, f, {
               access: "public",
-              contentType: audioMime(f),
-              handleUploadUrl: "/api/upload",
-              clientPayload: pw,
+              token: td.clientToken,
+              contentType: mime,
               multipart: true,
             });
             rec.url = blob.url;
