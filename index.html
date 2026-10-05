@@ -513,7 +513,6 @@
                 >EXT.DAT</span
               >
               <input
-                accept="audio/*"
                 multiple
                 class="hidden"
                 id="audio-file-input"
@@ -634,6 +633,18 @@
       const PW_KEY = "cyberdeck.ap96.pw";
 
       // Vercel Blob helpers ------------------------------------------------
+      function audioMime(f) {
+        if (f.type && f.type.startsWith("audio/")) return f.type;
+        const ext = (f.name.match(/\.([a-z0-9]+)$/i) || [])[1];
+        const map = {
+          mp3: "audio/mpeg", wav: "audio/wav", flac: "audio/flac",
+          ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg",
+          m4a: "audio/mp4", aac: "audio/aac", weba: "audio/webm",
+          webm: "audio/webm",
+        };
+        return map[(ext || "").toLowerCase()] || "audio/mpeg";
+      }
+
       function getUploadPassword(force) {
         let pw = localStorage.getItem(PW_KEY);
         if (!pw || force) {
@@ -1386,6 +1397,7 @@
             );
             const blob = await upload("audio/" + f.name, f, {
               access: "public",
+              contentType: audioMime(f),
               handleUploadUrl: "/api/upload",
               clientPayload: pw,
               multipart: true,
