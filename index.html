@@ -1,0 +1,1738 @@
+<!doctype html>
+<html lang="en" style="">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      name="viewport"
+    />
+    <title>CYBERDECK AP-96 AUDIO TERMINAL</title>
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <!-- Phosphor Icons for High-Tech UI Symbols -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/regular/style.css"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/thin/style.css"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/light/style.css"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/bold/style.css"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/fill/style.css"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/duotone/style.css"
+    />
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              deck: {
+                charcoal: "#0a0c0e",
+                panel: "#101418",
+                rust: "#a35028",
+                amber: "#ff9824",
+                neonCyan: "#ffffff",
+                neonBlue: "#f5f7fa",
+                lumGreen: "#ffffff",
+                oledDark: "#04070a",
+              },
+            },
+            fontFamily: {
+              mono: [
+                '"Share Tech Mono"',
+                "ui-monospace",
+                "SFMono-Regular",
+                "Menlo",
+                "monospace",
+              ],
+              sans: ['"Chakra Petch"', "system-ui", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+    <!-- Typography styles -->
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&amp;family=Share+Tech+Mono&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Scanlines and screen CRT curvature shimmer */
+      .crt-overlay {
+        background:
+          linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%),
+          linear-gradient(
+            90deg,
+            rgba(255, 0, 0, 0.03),
+            rgba(0, 255, 0, 0.02),
+            rgba(0, 0, 255, 0.03)
+          );
+        background-size:
+          100% 3px,
+          4px 100%;
+        pointer-events: none;
+      }
+      .text-glow-cyan {
+        text-shadow:
+          0 0 5px rgba(255, 255, 255, 0.95),
+          0 0 12px rgba(255, 255, 255, 0.55);
+      }
+      .text-glow-amber {
+        text-shadow: 0 0 6px rgba(255, 152, 36, 0.85);
+      }
+      .box-glow-cyan {
+        box-shadow:
+          0 0 10px rgba(255, 255, 255, 0.5),
+          inset 0 0 6px rgba(255, 255, 255, 0.2);
+      }
+
+      /* Screen glass inner vignette & angled beveled screen corners matching image 3 screen frame */
+      .screen-clip {
+        clip-path: polygon(
+          20px 0%,
+          calc(100% - 20px) 0%,
+          100% 20px,
+          100% calc(100% - 20px),
+          calc(100% - 20px) 100%,
+          20px 100%,
+          0% calc(100% - 20px),
+          0% 20px
+        );
+      }
+      .screen-recess-shadow {
+        box-shadow:
+          inset 0 6px 18px rgba(0, 0, 0, 0.95),
+          inset 0 -6px 18px rgba(0, 0, 0, 0.95),
+          inset 6px 0 16px rgba(0, 0, 0, 0.95),
+          inset -6px 0 16px rgba(0, 0, 0, 0.95);
+      }
+
+      /* Custom mini range slider */
+      input[type="range"] {
+        -webkit-appearance: none;
+        background: transparent;
+      }
+      input[type="range"]::-webkit-slider-runnable-track {
+        background: #0f161c;
+        height: 3px;
+        border: 1px solid #272f38;
+        border-radius: 2px;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 11px;
+        width: 6px;
+        background: #ffffff;
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
+        cursor: pointer;
+        margin-top: -4px;
+        border-radius: 1px;
+      }
+
+      .tactile-btn {
+        background: linear-gradient(180deg, #182026 0%, #0d1217 100%);
+        box-shadow:
+          1px 1px 0px rgba(255, 255, 255, 0.08) inset,
+          -1px -1px 0px rgba(0, 0, 0, 0.8) inset,
+          0 2px 4px rgba(0, 0, 0, 0.6);
+        transition: all 0.08s ease-in-out;
+      }
+      .tactile-btn:active {
+        transform: translateY(1px);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.9) inset;
+      }
+      .tactile-btn.active-state {
+        border-color: rgba(255, 255, 255, 0.9) !important;
+        color: #ffffff !important;
+        box-shadow:
+          0 0 10px rgba(255, 255, 255, 0.5),
+          inset 0 1px 3px rgba(0, 0, 0, 0.8) !important;
+      }
+
+      /* CRT On/Off Transition Animation */
+      .crt-off {
+        filter: brightness(0.04) grayscale(1) !important;
+        opacity: 0.25 !important;
+        transition:
+          filter 0.25s ease-out,
+          opacity 0.25s ease-out;
+      }
+      .crt-turn-on {
+        animation: crtTurnOn 0.35s ease-out forwards;
+      }
+      @keyframes crtTurnOn {
+        0% {
+          transform: scaleY(0.005) scaleX(0.8);
+          filter: brightness(3);
+        }
+        50% {
+          transform: scaleY(0.02) scaleX(1);
+          filter: brightness(2);
+        }
+        100% {
+          transform: scaleY(1) scaleX(1);
+          filter: brightness(1);
+        }
+      }
+
+      /* Phosphor bloom visualizer container filter */
+      .phosphor-bloom {
+        filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.3))
+          drop-shadow(0 0 10px rgba(255, 42, 42, 0.25));
+      }
+    
+      /* Slim scrollbar for the tracklist */
+      .deck-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: #3a4752 transparent;
+      }
+      .deck-scroll::-webkit-scrollbar {
+        width: 4px;
+      }
+      .deck-scroll::-webkit-scrollbar-thumb {
+        background: #3a4752;
+        border-radius: 2px;
+      }
+    </style>
+  </head>
+  <body
+    class="bg-black h-screen text-slate-300 font-mono flex items-center justify-center p-0 sm:p-2 select-none overflow-hidden"
+  >
+    <!-- Ambient dark sci-fi background glow behind device -->
+    <div
+      class="fixed inset-0 pointer-events-none flex items-center justify-center"
+    >
+      <div
+        class="w-[500px] h-[750px] bg-slate-400/5 blur-[120px] rounded-full"
+      ></div>
+    </div>
+    <!-- MAIN VIEWPORT RIG CONTAINER: Matches chassis.png aspect ratio (1053x1920) -->
+    <main
+      class="relative shrink-0 w-[420px] aspect-[1053/1920] flex items-center justify-center z-10"
+      id="rig-root"
+      style="transform-origin: center center"
+    >
+      <!-- Actual Hardware Cyberdeck Device Chassis PNG/Render -->
+      <img
+        alt="Cyberdeck Rig Chassis"
+        class="absolute inset-0 w-full h-full object-contain pointer-events-none z-10 drop-shadow-[0_20px_45px_rgba(0,0,0,0.95)]"
+        id="rig-chassis-image"
+        src="chassis.png"
+      />
+      <!-- ========================================================================= -->
+      <!-- PRECISELY POSITIONED RECESSED GLASS SCREEN OVERLAY                         -->
+      <!-- ========================================================================= -->
+      <div
+        class="absolute z-20 overflow-hidden flex flex-col justify-between screen-clip screen-recess-shadow bg-deck-oledDark transition-all duration-200"
+        id="screen-container"
+        style="
+          left: 9.5%;
+          top: 5.21%;
+          width: 68.37%;
+          height: 53.39%;
+          padding: 3% 4% 3% 4%;
+        "
+      >
+        <!-- CRT Screen Scanline & Shimmer Layer -->
+        <div
+          class="crt-overlay absolute inset-0 z-30 pointer-events-none"
+        ></div>
+        <!-- System Diagnostics Overlay (Toggled via SYS physical button) -->
+        <div
+          class="absolute inset-2 z-40 bg-[#070b0ee6] backdrop-blur-sm border border-white/40 rounded p-2 text-[8px] flex flex-col justify-between hidden"
+          id="sys-diag-modal"
+        >
+          <div
+            class="flex justify-between items-center border-b border-white/20 pb-1 text-white text-glow-cyan"
+          >
+            <span class="font-bold flex items-center gap-1"
+              ><i class="ph-bold ph-cpu"></i> CORE DIAGNOSTICS</span
+            >
+            <span
+              class="text-zinc-400 cursor-pointer hover:text-white"
+              id="close-diag"
+              >[ESC]</span
+            >
+          </div>
+          <div class="space-y-1 font-mono text-zinc-300 py-1">
+            <div class="flex justify-between">
+              <span class="">DSP ENGINE:</span
+              ><span class="text-white text-glow-cyan">ONLINE [48kHz]</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="">AUDIO BUFFER:</span
+              ><span class="text-white text-glow-cyan" id="diag-buffer"
+                >ACTIVE (WebAudio)</span
+              >
+            </div>
+            <div class="flex justify-between">
+              <span class="">LATENCY:</span
+              ><span class="text-deck-amber">&lt; 5.2ms</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="">LIBRARY:</span
+              ><span class="text-zinc-200" id="diag-library">0 TRK / 0 KB</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="">BAND CHANNELS:</span
+              ><span class="text-white text-glow-cyan">7-BAND FFT</span>
+            </div>
+          </div>
+          <div
+            class="border-t border-white/20 pt-1 text-[7px] text-zinc-400 flex justify-between"
+          >
+            <span class="">CYBERDECK AP-96</span>
+            <span class="text-white text-glow-cyan">PRESS SYS TO EXIT</span>
+          </div>
+        </div>
+        <!-- Tracklist overlay (toggled via LIST button) -->
+        <div
+          class="absolute inset-2 z-40 bg-[#070b0ef2] backdrop-blur-sm border border-white/40 rounded p-2 text-[8px] flex flex-col hidden"
+          id="tracklist-modal"
+        >
+          <div
+            class="flex justify-between items-center border-b border-white/20 pb-1 text-white text-glow-cyan shrink-0"
+          >
+            <span class="font-bold flex items-center gap-1"
+              ><i class="ph-bold ph-list-numbers"></i> TRACKLIST
+              <span class="text-zinc-400 font-normal" id="tracklist-total">[00]</span></span
+            >
+            <span
+              class="text-zinc-400 cursor-pointer hover:text-white"
+              id="close-tracklist"
+              >[ESC]</span
+            >
+          </div>
+          <div
+            class="deck-scroll flex-1 min-h-0 overflow-y-auto py-1 font-mono"
+            id="tracklist-body"
+          ></div>
+          <div
+            class="border-t border-white/20 pt-1 text-[7px] text-zinc-400 flex justify-between shrink-0"
+          >
+            <span>CLICK TO PLAY // X TO REMOVE</span>
+            <span class="cursor-pointer hover:text-red-400" id="btn-clear-all"
+              >CLEAR ALL</span
+            >
+          </div>
+        </div>
+        <!-- Screen Top Terminal Header -->
+        <header
+          class="relative z-20 flex items-center justify-between border-b border-white/20 pb-1 mb-1 text-[9px] sm:text-[10px] text-zinc-400"
+        >
+          <div class="flex items-center gap-1.5">
+            <span
+              class="px-1 py-0.2 bg-deck-rust/20 border border-deck-rust/50 text-deck-amber font-bold text-[8px] rounded-sm tracking-wider"
+              >AUDIO-DSP</span
+            >
+          </div>
+          <div class="flex items-center gap-1.5 font-mono text-[8.5px]">
+            <span
+              class="w-1.5 h-1.5 rounded-full bg-amber-500/80 shadow-[0_0_4px_#ff9824] inline-block"
+              id="status-led"
+            ></span>
+          </div>
+        </header>
+        <!-- ========================================================================= -->
+        <!-- SPECTRUM VISUALIZER (Segmented LED bars)                                    -->
+        <!-- ========================================================================= -->
+        <section
+          class="relative z-20 bg-black/95 rounded border border-zinc-800/90 px-1.5 pt-1 pb-1 flex flex-col flex-1 justify-between min-h-0 overflow-hidden"
+          data-purpose="spectrum-visualizer"
+        >
+          <!-- Visualizer Top Meta Status -->
+          <div
+            class="flex justify-between items-center text-[7px] text-zinc-500 uppercase tracking-wider border-b border-zinc-900/90 pb-0.5 mb-0.5"
+          >
+            <span class="text-zinc-400">SPECTRUM FREQ (dB)</span>
+            <span
+              class="text-red-500 flex items-center gap-0.5 font-bold"
+              id="peak-indicator"
+            >
+              <span
+                class="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_6px_#ff2a2a] inline-block animate-ping"
+              ></span>
+              PEAK LIM
+            </span>
+          </div>
+          <!-- Real-Time Segmented LED Canvas with High-Tech Phosphor Bloom -->
+          <div
+            class="relative w-full flex-1 flex items-center justify-center min-h-[90px] overflow-hidden"
+          >
+            <canvas
+              class="w-full h-full block"
+              height="150"
+              id="visualizer-canvas"
+              width="300"
+            ></canvas>
+          </div>
+          <!-- Frequency Channel Legend: 63, 160, 400, 1k, 2.5k, 6.3k, 16k -->
+          <div
+            class="grid grid-cols-7 text-center font-mono text-[7.5px] pt-0.5 border-t border-zinc-800/80 text-zinc-400 font-semibold tracking-tighter"
+          >
+            <span class="">63</span>
+            <span class="">160</span>
+            <span class="">400</span>
+            <span class="">1k</span>
+            <span class="">2.5k</span>
+            <span class="">6.3k</span>
+            <span class="">16k</span>
+          </div>
+        </section>
+        <!-- Track Information Card & Waveform Scrubber -->
+        <section
+          class="relative z-20 bg-[#060a0d] border border-white/15 rounded px-2 py-1 my-1"
+          data-purpose="track-info"
+        >
+          <div class="flex items-center justify-between text-[7.5px]">
+            <span class="text-zinc-500 font-mono" id="status-tag"
+              >STATUS: NO MEDIA</span
+            >
+            <span class="text-zinc-500 font-mono" id="track-counter">TRK --/--</span>
+          </div>
+          <div
+            class="truncate font-sans font-bold text-[11px] sm:text-[12px] tracking-wide text-zinc-100 uppercase mt-0.5 leading-tight"
+            id="track-name"
+          >
+            NO TRACK LOADED
+          </div>
+          <div
+            class="text-[7.5px] text-zinc-400 flex items-center justify-between font-mono"
+          >
+            <span class="truncate max-w-[70%]" id="artist-name"
+              >INSERT MEDIA // LOAD FILE</span
+            >
+            <span class="text-zinc-400 uppercase" id="codec-label"
+              >--</span
+            >
+          </div>
+          <!-- Progress Scrubber -->
+          <div class="mt-1" data-purpose="playback-progress">
+            <div
+              class="relative w-full h-1.5 bg-zinc-950 border border-zinc-800 rounded-xs cursor-pointer overflow-hidden group hover:border-white/50"
+              id="timeline-container"
+            >
+              <div
+                class="h-full bg-gradient-to-r from-zinc-400 to-white w-[0%] shadow-[0_0_8px_#ffffff] transition-[width] duration-100"
+                id="playback-bar"
+                style="width: 0%"
+              ></div>
+            </div>
+            <div
+              class="flex justify-between text-[7.5px] font-mono text-zinc-400 mt-0.5"
+            >
+              <span
+                class="text-white text-glow-cyan font-semibold"
+                id="time-current"
+                >00:00</span
+              >
+              <span class="text-zinc-500" id="time-duration">00:00</span>
+            </div>
+          </div>
+        </section>
+        <!-- Screen Playback Controls & File Load (Interior Display Screen) -->
+        <section
+          class="relative z-20 flex flex-col gap-1"
+          data-purpose="screen-transport"
+        >
+          <!-- Buttons row: Shuffle, Prev, Play/Pause, Next, Loop -->
+          <div class="grid grid-cols-5 gap-1">
+            <button
+              class="tactile-btn py-1 rounded text-zinc-400 hover:text-white flex items-center justify-center transition"
+              id="btn-shuffle"
+              title="Shuffle"
+            >
+              <i class="ph-bold ph-shuffle text-xs"></i>
+            </button>
+            <button
+              class="tactile-btn py-1 rounded text-zinc-300 hover:text-white flex items-center justify-center transition"
+              id="btn-prev"
+              title="Previous Track"
+            >
+              <i class="ph-bold ph-skip-back text-xs"></i>
+            </button>
+            <button
+              class="tactile-btn py-1 rounded bg-deck-panel border border-white/70 text-white text-glow-cyan box-glow-cyan flex items-center justify-center transition"
+              id="btn-play"
+              title="Play/Pause"
+            >
+              <i class="ph-fill ph-play text-xs" id="play-icon"></i>
+            </button>
+            <button
+              class="tactile-btn py-1 rounded text-zinc-300 hover:text-white flex items-center justify-center transition"
+              id="btn-next"
+              title="Next Track"
+            >
+              <i class="ph-bold ph-skip-forward text-xs"></i>
+            </button>
+            <button
+              class="tactile-btn py-1 rounded text-zinc-400 hover:text-deck-amber flex items-center justify-center transition"
+              id="btn-loop"
+              title="Repeat Mode"
+            >
+              <i class="ph-bold ph-repeat text-xs"></i>
+            </button>
+          </div>
+          <!-- Load file cartridge slot + Test audio signal -->
+          <div class="flex gap-1 items-center">
+            <label
+              class="flex-1 cursor-pointer tactile-btn rounded px-1.5 py-0.5 flex items-center justify-between border border-zinc-700/60 hover:border-white/60 transition"
+              for="audio-file-input"
+              id="load-file-label"
+            >
+              <span
+                class="text-[7.5px] uppercase font-bold text-zinc-300 flex items-center gap-1"
+              >
+                <i class="ph-bold ph-upload-simple text-white text-[9px]"></i>
+                <span class="">LOAD TRACK FILE</span>
+              </span>
+              <span
+                class="text-[6.5px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700"
+                >EXT.DAT</span
+              >
+              <input
+                accept="audio/*"
+                multiple
+                class="hidden"
+                id="audio-file-input"
+                type="file"
+              />
+            </label>
+          <button
+              class="tactile-btn rounded px-1.5 py-0.5 flex items-center gap-1 border border-zinc-700/60 hover:border-white/60 transition text-[7.5px] uppercase font-bold text-zinc-300"
+              id="btn-tracklist"
+              title="Tracklist"
+            >
+              <i class="ph-bold ph-list-numbers text-white text-[9px]"></i>
+              <span>LIST <span id="list-count">00</span></span>
+            </button>
+          </div>
+          <!-- Volume & Drive Gain Sliders -->
+          <div
+            class="grid grid-cols-2 gap-1.5 pt-0.5 border-t border-zinc-800/80"
+          >
+            <div>
+              <div class="flex justify-between text-[7px] text-zinc-400 mb-0.5">
+                <span class="">VOL LEVEL</span>
+                <span
+                  class="text-white text-glow-cyan font-bold"
+                  id="vol-readout"
+                  >80%</span
+                >
+              </div>
+              <input
+                class="w-full cursor-pointer"
+                id="volume-slider"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.8"
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+      <!-- END RECESSED GLASS SCREEN OVERLAY -->
+      <!-- ========================================================================= -->
+      <!-- INTERACTIVE HOTSPOTS OVER PHYSICAL HARDWARE CONTROLS (LOWER PANEL)        -->
+      <!-- ========================================================================= -->
+      <!-- SYS Tactile Hotspot -->
+      <button
+        class="absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-amber-400/20 active:bg-amber-400/40 border border-transparent hover:border-amber-400/40 transition duration-75"
+        id="hotspot-sys"
+        style="left: 11.21%; top: 64.74%; width: 10.45%; height: 5.73%"
+        title="SYS Diagnostics"
+      ></button>
+      <!-- DEL Tactile Hotspot -->
+      <button
+        class="absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-red-400/20 active:bg-red-400/40 border border-transparent hover:border-red-400/40 transition duration-75"
+        id="hotspot-del"
+        style="left: 24.22%; top: 64.74%; width: 10.45%; height: 5.73%"
+        title="DEL Reset / Eject"
+      ></button>
+      <!-- INS Tactile Hotspot -->
+      <button
+        class="absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-amber-400/20 active:bg-amber-400/40 border border-transparent hover:border-amber-400/40 transition duration-75"
+        id="hotspot-ins"
+        style="left: 37.23%; top: 64.74%; width: 10.45%; height: 5.73%"
+        title="INS Cyber Tone Injection"
+      ></button>
+      <!-- ON/OFF Toggle Switch Hotspot -->
+      <button
+        class="absolute z-20 cursor-pointer rounded-sm bg-transparent hover:bg-white/10 active:scale-95 transition"
+        id="hotspot-toggle"
+        style="left: 52.52%; top: 64.32%; width: 6.65%; height: 7.03%"
+        title="Master Power Toggle"
+      ></button>
+      <!-- Rotary Dial Knob Hotspot with Crisp White Rotatable Indicator Glow -->
+      <div
+        class="absolute z-20 cursor-pointer rounded-full flex items-center justify-center hover:bg-white/10 active:scale-95 transition"
+        id="hotspot-knob"
+        style="left: 62.2%; top: 63.28%; width: 16.15%; height: 8.85%"
+        title="Hardware Volume / Filter Rotary Dial"
+      >
+        <div
+          class="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_10px_#ffffff,0_0_3px_#ffffff] transition-transform duration-75"
+          id="knob-dot"
+          style="transform: rotate(0deg) translateY(-14px)"
+        ></div>
+      </div>
+    </main>
+    <!-- Hidden Native Audio Player element for uploaded and synthesized media -->
+    <audio id="core-audio-element" preload="metadata"></audio>
+    <!-- ========================================================================= -->
+    <!-- AUDIO & VISUALIZER ENGINE                                                 -->
+    <!-- ========================================================================= -->
+    <script>
+      // =======================================================================
+      // CONFIG
+      // =======================================================================
+      const DESIGN_W = 420; // rig is designed at this width, then scaled to fit
+      const DESIGN_H = DESIGN_W * (1920 / 1053);
+      const FILL = 0.96; // 0-1: how much of the window the rig fills
+      const MAX_SCALE = 4;
+      const LOGICAL_W = 300; // visualizer drawing space
+      const LOGICAL_H = 150;
+      const NUM_BARS = 7;
+      const SEGMENTS_PER_BAR = 16;
+      const GLOW_STRENGTH = 1; // bar glow: 0 = off, 1 = default, 2 = intense
+      const KNOB_OPEN = 351; // knob angle that equals a fully open filter
+
+      // Visualizer fade timing (seconds). Bigger half-life = slower fade.
+      const ATTACK_HALF_LIFE = 0.04;
+      const FALL_HALF_LIFE_PLAYING = 0.12;
+      const FALL_HALF_LIFE_PAUSED = 0.45;
+      const PEAK_FALL_PER_SEC = 7; // segments per second
+
+      // Persistence
+      const STATE_KEY = "cyberdeck.ap96.state.v1";
+      const DB_NAME = "cyberdeck-ap96";
+      const DB_STORE = "tracks";
+      const PW_KEY = "cyberdeck.ap96.pw";
+
+      // Vercel Blob helpers ------------------------------------------------
+      function getUploadPassword(force) {
+        let pw = localStorage.getItem(PW_KEY);
+        if (!pw || force) {
+          pw = prompt("UPLOAD PASSWORD");
+          if (pw) localStorage.setItem(PW_KEY, pw);
+        }
+        return pw;
+      }
+
+      async function blobDelete(urls) {
+        const pw = getUploadPassword();
+        if (!pw) throw new Error("no password");
+        const r = await fetch("/api/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ urls, password: pw }),
+        });
+        if (r.status === 401) {
+          localStorage.removeItem(PW_KEY);
+          throw new Error("bad password");
+        }
+        if (!r.ok) throw new Error("delete failed");
+      }
+
+      // =======================================================================
+      // STATE
+      // =======================================================================
+      let isPlaying = false;
+      let isDeviceOn = true;
+      let isShuffle = false;
+      let isLooping = false;
+      let tracks = []; // { id, name, type, size, duration, blob }
+      let currentIndex = -1;
+      let currentUrl = null;
+      let knobAngle = KNOB_OPEN;
+      let resumeAfterPowerOn = false;
+      let pendingSeek = null; // seconds to jump to once metadata loads
+      let persistOK = true; // false if IndexedDB is unavailable / full
+      let lastSave = 0;
+      let flashToken = 0;
+
+      // Audio API nodes
+      let audioCtx = null;
+      let analyser = null;
+      let masterGain = null;
+      let driveGain = null;
+      let mediaSourceNode = null;
+      let biquadFilter = null;
+      let freqData = null;
+      let canvasK = 1; // canvas pixels per logical pixel (set in applyScale)
+
+      // =======================================================================
+      // DOM
+      // =======================================================================
+      const $ = (id) => document.getElementById(id);
+      const canvas = $("visualizer-canvas");
+      const ctx = canvas.getContext("2d");
+      const rigRoot = $("rig-root");
+      const audioElement = $("core-audio-element");
+      const playBtn = $("btn-play");
+      const playIcon = $("play-icon");
+      const statusTag = $("status-tag");
+      const statusLed = $("status-led");
+      const trackCounter = $("track-counter");
+      const screenContainer = $("screen-container");
+      const audioFileInput = $("audio-file-input");
+      const trackNameEl = $("track-name");
+      const artistNameEl = $("artist-name");
+      const codecLabel = $("codec-label");
+      const timeCurrent = $("time-current");
+      const timeDuration = $("time-duration");
+      const playbackBar = $("playback-bar");
+      const timelineContainer = $("timeline-container");
+      const volSlider = $("volume-slider");
+      const volReadout = $("vol-readout");
+      const hotspotToggle = $("hotspot-toggle");
+      const hotspotKnob = $("hotspot-knob");
+      const knobDot = $("knob-dot");
+      const hotspotSys = $("hotspot-sys");
+      const hotspotDel = $("hotspot-del");
+      const hotspotIns = $("hotspot-ins");
+      const sysDiagModal = $("sys-diag-modal");
+      const closeDiag = $("close-diag");
+      const diagLibrary = $("diag-library");
+      const btnShuffle = $("btn-shuffle");
+      const btnPrev = $("btn-prev");
+      const btnNext = $("btn-next");
+      const btnLoop = $("btn-loop");
+      const btnTracklist = $("btn-tracklist");
+      const listCount = $("list-count");
+      const tracklistModal = $("tracklist-modal");
+      const tracklistBody = $("tracklist-body");
+      const tracklistTotal = $("tracklist-total");
+      const closeTracklist = $("close-tracklist");
+      const btnClearAll = $("btn-clear-all");
+
+      // =======================================================================
+      // DISPLAY SCALING (whole rig scales as one unit; canvas stays sharp)
+      // =======================================================================
+      function applyScale() {
+        const s = Math.min(
+          (window.innerHeight * FILL) / DESIGN_H,
+          (window.innerWidth * FILL) / DESIGN_W,
+          MAX_SCALE,
+        );
+        rigRoot.style.transform = `scale(${s})`;
+        const k = Math.max(1, s * (window.devicePixelRatio || 1));
+        canvas.width = Math.round(LOGICAL_W * k);
+        canvas.height = Math.round(LOGICAL_H * k);
+        ctx.setTransform(k, 0, 0, k, 0, 0);
+        canvasK = k;
+      }
+      window.addEventListener("resize", applyScale);
+      applyScale();
+
+      // =======================================================================
+      // HELPERS
+      // =======================================================================
+      const pad2 = (n) => String(n).padStart(2, "0");
+
+      function formatTime(sec) {
+        if (!isFinite(sec) || sec < 0) return "00:00";
+        return `${pad2(Math.floor(sec / 60))}:${pad2(Math.floor(sec % 60))}`;
+      }
+
+      function formatSize(bytes) {
+        if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
+        return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+      }
+
+      function extOf(name) {
+        const m = /\.([a-z0-9]+)$/i.exec(name);
+        return m ? m[1].toUpperCase() : "AUDIO";
+      }
+
+      // =======================================================================
+      // STATUS LINE
+      // =======================================================================
+      function refreshStatus() {
+        if (!isDeviceOn) {
+          statusTag.textContent = "STATUS: STANDBY";
+          statusTag.className = "text-zinc-500 font-mono";
+        } else if (isPlaying) {
+          statusTag.textContent = "STATUS: RUNNING";
+          statusTag.className = "text-deck-amber font-mono";
+        } else if (!tracks.length) {
+          statusTag.textContent = "STATUS: NO MEDIA";
+          statusTag.className = "text-zinc-500 font-mono";
+        } else {
+          statusTag.textContent = "STATUS: PAUSED";
+          statusTag.className = "text-zinc-500 font-mono";
+        }
+      }
+
+      function flashStatus(msg, ms = 1200) {
+        if (!isDeviceOn) return;
+        statusTag.textContent = msg;
+        const token = ++flashToken;
+        setTimeout(() => {
+          if (token === flashToken) refreshStatus();
+        }, ms);
+      }
+
+      function updatePlayStateUI(playing) {
+        isPlaying = playing;
+        if (playing && isDeviceOn) {
+          playIcon.className = "ph-fill ph-pause text-xs";
+          statusLed.className =
+            "w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_#ffffff] animate-pulse inline-block";
+        } else {
+          playIcon.className = "ph-fill ph-play text-xs";
+          statusLed.className =
+            "w-1.5 h-1.5 rounded-full bg-amber-500/80 shadow-[0_0_4px_#ff9824] inline-block";
+        }
+        refreshStatus();
+      }
+
+      // =======================================================================
+      // PERSISTENCE: small state in localStorage, audio files in IndexedDB
+      // =======================================================================
+      function saveState() {
+        try {
+          const t = tracks[currentIndex];
+          localStorage.setItem(
+            STATE_KEY,
+            JSON.stringify({
+              trackId: t ? t.id : null,
+              time: pendingSeek ?? (audioElement.currentTime || 0),
+              volume: parseFloat(volSlider.value),
+              knobAngle,
+              shuffle: isShuffle,
+              loop: isLooping,
+              deviceOn: isDeviceOn,
+            }),
+          );
+        } catch (e) {}
+      }
+
+      function loadState() {
+        try {
+          return JSON.parse(localStorage.getItem(STATE_KEY)) || null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      let dbPromise = null;
+      function openDB() {
+        if (!dbPromise) {
+          dbPromise = new Promise((resolve, reject) => {
+            if (!window.indexedDB) return reject(new Error("no indexedDB"));
+            const req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = () =>
+              req.result.createObjectStore(DB_STORE, {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+          });
+        }
+        return dbPromise;
+      }
+
+      function idb(mode, fn) {
+        return openDB().then(
+          (d) =>
+            new Promise((resolve, reject) => {
+              const tx = d.transaction(DB_STORE, mode);
+              const req = fn(tx.objectStore(DB_STORE));
+              tx.oncomplete = () => resolve(req ? req.result : undefined);
+              tx.onerror = () => reject(tx.error);
+              tx.onabort = () => reject(tx.error);
+            }),
+        );
+      }
+
+      const dbAdd = (rec) => idb("readwrite", (s) => s.add(rec));
+      const dbDelete = (id) => idb("readwrite", (s) => s.delete(id));
+      const dbClear = () => idb("readwrite", (s) => s.clear());
+
+      async function loadLibrary() {
+        try {
+          const r = await fetch("/api/tracks", { cache: "no-store" });
+          if (!r.ok) throw new Error("list failed");
+          const blobs = await r.json();
+          blobs.sort((a, b) => new Date(a.uploadedAt) - new Date(b.uploadedAt));
+          tracks = blobs.map((b) => ({
+            id: b.url,
+            url: b.url,
+            name: decodeURIComponent(b.pathname.replace(/^audio\//, "")),
+            type: "",
+            size: b.size,
+            duration: 0,
+          }));
+        } catch (e) {
+          persistOK = false;
+          tracks = [];
+        }
+      }
+
+      // =======================================================================
+      // WEB AUDIO ENGINE
+      // =======================================================================
+      const knobCutoff = () => 400 + (knobAngle / 360) * 16000;
+
+      function initAudioGraph() {
+        if (!audioCtx) {
+          const AudioContextClass =
+            window.AudioContext || window.webkitAudioContext;
+          audioCtx = new AudioContextClass();
+
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.8;
+          freqData = new Uint8Array(analyser.frequencyBinCount);
+
+          biquadFilter = audioCtx.createBiquadFilter();
+          biquadFilter.type = "lowpass";
+          biquadFilter.frequency.value = knobCutoff();
+
+          driveGain = audioCtx.createGain();
+          driveGain.gain.value = 1.35;
+
+          masterGain = audioCtx.createGain();
+          masterGain.gain.value = parseFloat(volSlider.value) || 0.8;
+
+          // source -> filter -> driveGain -> analyser -> masterGain -> out
+          biquadFilter.connect(driveGain);
+          driveGain.connect(analyser);
+          analyser.connect(masterGain);
+          masterGain.connect(audioCtx.destination);
+
+          try {
+            mediaSourceNode = audioCtx.createMediaElementSource(audioElement);
+            mediaSourceNode.connect(biquadFilter);
+          } catch (e) {}
+        }
+        if (audioCtx.state === "suspended") audioCtx.resume();
+      }
+
+      // Tactile procedural sound effects for the hardware buttons
+      function playTactileFeedback(type = "click") {
+        try {
+          if (!audioCtx) initAudioGraph();
+          if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+          if (!audioCtx) return;
+
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.connect(g);
+          g.connect(audioCtx.destination);
+
+          const now = audioCtx.currentTime;
+          if (type === "click") {
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(1400, now);
+            osc.frequency.exponentialRampToValueAtTime(120, now + 0.04);
+            g.gain.setValueAtTime(0.09, now);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+            osc.start(now);
+            osc.stop(now + 0.045);
+          } else if (type === "beep") {
+            osc.type = "square";
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.setValueAtTime(1760, now + 0.04);
+            g.gain.setValueAtTime(0.08, now);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            osc.start(now);
+            osc.stop(now + 0.13);
+          } else if (type === "del") {
+            osc.type = "sawtooth";
+            osc.frequency.setValueAtTime(320, now);
+            osc.frequency.exponentialRampToValueAtTime(60, now + 0.1);
+            g.gain.setValueAtTime(0.12, now);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc.start(now);
+            osc.stop(now + 0.11);
+          } else if (type === "power") {
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(80, now);
+            osc.frequency.exponentialRampToValueAtTime(900, now + 0.15);
+            g.gain.setValueAtTime(0.1, now);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+            osc.start(now);
+            osc.stop(now + 0.18);
+          }
+        } catch (e) {}
+      }
+
+      // =======================================================================
+      // VISUALIZER (bars rise fast, fall slowly; fade gently when paused)
+      // =======================================================================
+      const levels = new Array(NUM_BARS).fill(0); // smoothed bar heights
+      const peakHolds = new Array(NUM_BARS).fill(0);
+      const binIndices = [1, 3, 7, 16, 32, 64, 110]; // 63Hz ... 16kHz
+      let lastFrame = performance.now();
+
+      function drawVisualizer(now) {
+        requestAnimationFrame(drawVisualizer);
+
+        const dt = Math.min(0.1, (now - lastFrame) / 1000 || 0.016);
+        lastFrame = now;
+
+        const width = LOGICAL_W;
+        const height = LOGICAL_H;
+        ctx.clearRect(0, 0, width, height);
+
+        if (!isDeviceOn) {
+          levels.fill(0);
+          peakHolds.fill(0);
+          return;
+        }
+
+        const reading = analyser && isPlaying && freqData;
+        if (reading) analyser.getByteFrequencyData(freqData);
+
+        const paddingX = 12;
+        const availableWidth = width - paddingX * 2;
+        const colWidth = availableWidth / NUM_BARS;
+        const barThickness = Math.floor(colWidth * 0.62);
+        const segGap = 2;
+        const segHeight = Math.floor(
+          (height - SEGMENTS_PER_BAR * segGap - 8) / SEGMENTS_PER_BAR,
+        );
+
+        for (let i = 0; i < NUM_BARS; i++) {
+          // Target height: live audio when playing, zero when paused
+          let target = 0;
+          if (reading) {
+            const rawVal = freqData[binIndices[i]] || 0;
+            const boost = 1 + i * 0.12; // lift highs for balance
+            target = Math.min(
+              SEGMENTS_PER_BAR,
+              (rawVal / 255) * SEGMENTS_PER_BAR * boost,
+            );
+          }
+
+          // Time-based smoothing so it looks the same at 60/144Hz
+          const falling = target < levels[i];
+          const half = !falling
+            ? ATTACK_HALF_LIFE
+            : isPlaying
+              ? FALL_HALF_LIFE_PLAYING
+              : FALL_HALF_LIFE_PAUSED;
+          levels[i] += (target - levels[i]) * (1 - Math.pow(0.5, dt / half));
+
+          const lit = Math.round(levels[i]);
+
+          // Peak hold: snaps up, then drifts down at a steady rate
+          if (levels[i] >= peakHolds[i]) {
+            peakHolds[i] = levels[i];
+          } else {
+            peakHolds[i] = Math.max(0, peakHolds[i] - PEAK_FALL_PER_SEC * dt);
+          }
+
+          const barX = paddingX + i * colWidth + (colWidth - barThickness) / 2;
+          // shadowBlur ignores the canvas transform, so scale it by hand
+          const gk =
+            canvasK *
+            GLOW_STRENGTH *
+            (0.6 + 0.4 * Math.min(1, levels[i] / SEGMENTS_PER_BAR));
+
+          for (let seg = 0; seg < SEGMENTS_PER_BAR; seg++) {
+            const segY = height - 4 - seg * (segHeight + segGap);
+            const isLit = seg <= lit;
+            const isPeak =
+              peakHolds[i] >= 1 && Math.floor(peakHolds[i]) === seg;
+
+            let blur = 0;
+            if (isLit) {
+              // Top tips are red, base and middle are crisp white
+              if (seg >= SEGMENTS_PER_BAR - 3) {
+                ctx.fillStyle = "#ff2a2a";
+                ctx.shadowColor = "rgba(255, 24, 48, 1)";
+                blur = 16 * gk;
+              } else {
+                ctx.fillStyle = "#ffffff";
+                ctx.shadowColor = "rgba(255, 255, 255, 0.9)";
+                blur = 14 * gk;
+              }
+            } else if (isPeak) {
+              ctx.fillStyle = "#ff2a2a";
+              ctx.shadowColor = "rgba(255, 24, 48, 1)";
+              blur = 12 * gk;
+            } else {
+              ctx.fillStyle = "#0a1015";
+            }
+            ctx.shadowBlur = blur;
+
+            ctx.beginPath();
+            ctx.roundRect(barX, segY, barThickness, segHeight, 1.2);
+            ctx.fill();
+            if (isLit) {
+              // second, tighter pass stacks a hot core on top of the wide halo
+              ctx.shadowBlur = blur * 0.4;
+              ctx.fill();
+            }
+          }
+
+          // Outermost alignment dots
+          if (i === 0 || i === NUM_BARS - 1) {
+            const dotX = i === 0 ? barX - 5 : barX + barThickness + 4;
+            const energetic = Math.max(...levels) > 1;
+            for (let d = 0; d < 4; d++) {
+              const dotY = height - 8 - d * 34;
+              const isRedDot = d === 2 && energetic;
+              ctx.fillStyle = isRedDot ? "#ff2a44" : "#1e2c38";
+              ctx.shadowColor = isRedDot ? "#ff2a44" : "transparent";
+              ctx.shadowBlur = isRedDot ? 6 * canvasK : 0;
+              ctx.beginPath();
+              ctx.arc(dotX, dotY, 1.5, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+      }
+      requestAnimationFrame(drawVisualizer);
+
+      // =======================================================================
+      // LIBRARY / TRACKLIST UI
+      // =======================================================================
+      function updateCounters() {
+        const n = tracks.length;
+        trackCounter.textContent = n
+          ? `TRK ${pad2(currentIndex + 1)}/${pad2(n)}`
+          : "TRK --/--";
+        listCount.textContent = pad2(n);
+        tracklistTotal.textContent = `[${pad2(n)}]`;
+        const total = tracks.reduce((sum, t) => sum + t.size, 0);
+        diagLibrary.textContent =
+          `${n} TRK / ${formatSize(total)}` + (persistOK ? "" : " (SESSION)");
+      }
+
+      function renderTracklist() {
+        tracklistBody.replaceChildren();
+
+        if (!tracks.length) {
+          const empty = document.createElement("div");
+          empty.className = "text-zinc-500 text-center py-4 leading-relaxed";
+          empty.textContent = "NO TRACKS LOADED // USE LOAD TRACK FILE";
+          tracklistBody.appendChild(empty);
+          return;
+        }
+
+        tracks.forEach((t, i) => {
+          const isCurrent = i === currentIndex;
+          const row = document.createElement("div");
+          row.className =
+            "flex items-center gap-1 px-1 py-[3px] cursor-pointer border-b border-white/5 hover:bg-white/10 " +
+            (isCurrent ? "bg-white/10 text-white" : "text-zinc-400");
+          row.dataset.index = i;
+
+          const num = document.createElement("span");
+          num.className = "w-4 text-right text-zinc-500 shrink-0";
+          num.textContent = pad2(i + 1);
+
+          const marker = document.createElement("span");
+          marker.className = "w-2 shrink-0 text-white";
+          marker.textContent = isCurrent ? (isPlaying ? "▶" : "▮") : "";
+
+          const name = document.createElement("span");
+          name.className = "truncate flex-1 uppercase";
+          name.textContent = t.name;
+
+          const dur = document.createElement("span");
+          dur.className = "shrink-0 text-zinc-500";
+          dur.textContent = t.duration ? formatTime(t.duration) : "--:--";
+
+          const del = document.createElement("span");
+          del.className =
+            "shrink-0 px-1 text-zinc-500 hover:text-red-400 cursor-pointer";
+          del.title = "Remove track";
+          del.textContent = "×";
+          del.addEventListener("click", (e) => {
+            e.stopPropagation();
+            playTactileFeedback("del");
+            removeTrack(i);
+          });
+
+          row.addEventListener("click", () => {
+            playTactileFeedback("click");
+            selectTrack(i, { play: true });
+          });
+
+          row.append(num, marker, name, dur, del);
+          tracklistBody.appendChild(row);
+        });
+
+        const cur = tracklistBody.children[currentIndex];
+        if (cur) cur.scrollIntoView({ block: "nearest" });
+      }
+
+      function closeModals() {
+        sysDiagModal.classList.add("hidden");
+        tracklistModal.classList.add("hidden");
+        resetClearConfirm();
+      }
+
+      function toggleTracklist() {
+        const opening = tracklistModal.classList.contains("hidden");
+        closeModals();
+        if (opening) {
+          tracklistModal.classList.remove("hidden");
+          renderTracklist();
+        }
+      }
+
+      let clearArmed = false;
+      function resetClearConfirm() {
+        clearArmed = false;
+        btnClearAll.textContent = "CLEAR ALL";
+        btnClearAll.classList.remove("text-red-400");
+      }
+
+      // =======================================================================
+      // TRACK LOADING / PLAYBACK
+      // =======================================================================
+      function resetDisplay() {
+        trackNameEl.textContent = "NO TRACK LOADED";
+        artistNameEl.textContent = "INSERT MEDIA // LOAD FILE";
+        codecLabel.textContent = "--";
+        timeCurrent.textContent = "00:00";
+        timeDuration.textContent = "00:00";
+        playbackBar.style.width = "0%";
+      }
+
+      function selectTrack(index, { play = false, time = 0 } = {}) {
+        if (index < 0 || index >= tracks.length) {
+          clearCurrent();
+          return;
+        }
+        currentIndex = index;
+        const t = tracks[index];
+
+        // crossOrigin is required so the Web Audio visualizer can read remote audio
+        audioElement.crossOrigin = "anonymous";
+        audioElement.src = t.url;
+        audioElement.loop = isLooping;
+
+        pendingSeek = time > 0 ? time : null;
+
+        trackNameEl.textContent = t.name.toUpperCase();
+        artistNameEl.textContent = `MOUNTED // ${formatSize(t.size)}`;
+        codecLabel.textContent = extOf(t.name);
+        timeCurrent.textContent = formatTime(time);
+        timeDuration.textContent = formatTime(t.duration);
+        playbackBar.style.width =
+          t.duration && time ? `${(time / t.duration) * 100}%` : "0%";
+
+        updatePlayStateUI(false);
+        updateCounters();
+        renderTracklist();
+        saveState();
+
+        if (play && isDeviceOn) {
+          initAudioGraph();
+          audioElement.play().catch(() => {});
+        }
+      }
+
+      function clearCurrent() {
+        currentIndex = -1;
+        pendingSeek = null;
+        audioElement.pause();
+        audioElement.removeAttribute("src");
+        audioElement.load();
+        if (currentUrl) URL.revokeObjectURL(currentUrl);
+        currentUrl = null;
+        resetDisplay();
+        updatePlayStateUI(false);
+        updateCounters();
+        renderTracklist();
+        saveState();
+      }
+
+      function nextTrack() {
+        if (!tracks.length) return flashStatus("STATUS: NO MEDIA");
+        const wasPlaying = !audioElement.paused;
+        let idx;
+        if (isShuffle && tracks.length > 1) {
+          do idx = Math.floor(Math.random() * tracks.length);
+          while (idx === currentIndex);
+        } else {
+          idx = (currentIndex + 1) % tracks.length;
+        }
+        selectTrack(idx, { play: wasPlaying });
+      }
+
+      function prevTrack() {
+        if (!tracks.length) return flashStatus("STATUS: NO MEDIA");
+        const wasPlaying = !audioElement.paused;
+        // Standard behavior: restart the track first, go back if near start
+        if (audioElement.currentTime > 3) {
+          audioElement.currentTime = 0;
+          return;
+        }
+        const idx = (currentIndex - 1 + tracks.length) % tracks.length;
+        selectTrack(idx, { play: wasPlaying });
+      }
+
+      async function removeTrack(index) {
+        const t = tracks[index];
+        if (!t) return;
+        try {
+          await blobDelete([t.url]);
+        } catch (e) {
+          flashStatus("ERR: DELETE FAILED", 2500);
+          return;
+        }
+        const wasCurrent = index === currentIndex;
+        const wasPlaying = !audioElement.paused;
+        tracks.splice(index, 1);
+        if (wasCurrent) {
+          if (!tracks.length) clearCurrent();
+          else
+            selectTrack(Math.min(index, tracks.length - 1), {
+              play: wasPlaying,
+            });
+        } else if (index < currentIndex) {
+          currentIndex--;
+        }
+        updateCounters();
+        renderTracklist();
+        saveState();
+      }
+
+      async function clearAll() {
+        try {
+          await blobDelete(tracks.map((t) => t.url));
+        } catch (e) {
+          flashStatus("ERR: DELETE FAILED", 2500);
+          return;
+        }
+        tracks = [];
+        clearCurrent();
+      }
+
+      function probeDuration(file) {
+        return new Promise((resolve) => {
+          const a = new Audio();
+          a.preload = "metadata";
+          const url = URL.createObjectURL(file);
+          let finished = false;
+          const done = (d) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            URL.revokeObjectURL(url);
+            a.removeAttribute("src");
+            resolve(isFinite(d) ? d : 0);
+          };
+          const timer = setTimeout(() => done(0), 5000);
+          a.onloadedmetadata = () => done(a.duration);
+          a.onerror = () => done(0);
+          a.src = url;
+        });
+      }
+
+      async function addFiles(fileList) {
+        const files = [...fileList].filter(
+          (f) =>
+            f.type.startsWith("audio/") ||
+            /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|weba|webm)$/i.test(f.name),
+        );
+        if (!files.length) return flashStatus("ERR: NOT AUDIO");
+
+        initAudioGraph();
+        flashStatus("STATUS: LOADING", 4000);
+
+        let firstNew = -1;
+        let dupes = 0;
+        for (const f of files) {
+          if (tracks.some((t) => t.name === f.name && t.size === f.size)) {
+            dupes++;
+            continue;
+          }
+          const pw = getUploadPassword();
+          if (!pw) return flashStatus("ERR: NO PASSWORD", 2500);
+          const rec = {
+            name: f.name,
+            type: f.type,
+            size: f.size,
+            duration: await probeDuration(f),
+          };
+          try {
+            flashStatus("STATUS: UPLOADING", 60000);
+            const { upload } = await import(
+              "https://esm.sh/@vercel/blob/client"
+            );
+            const blob = await upload("audio/" + f.name, f, {
+              access: "public",
+              handleUploadUrl: "/api/upload",
+              clientPayload: pw,
+              multipart: true,
+            });
+            rec.url = blob.url;
+            rec.id = blob.url;
+          } catch (e) {
+            if (/unauthor/i.test(String(e && e.message)))
+              localStorage.removeItem(PW_KEY);
+            flashStatus("ERR: UPLOAD FAILED", 3000);
+            continue;
+          }
+          tracks.push(rec);
+          if (firstNew < 0) firstNew = tracks.length - 1;
+        }
+
+        updateCounters();
+        renderTracklist();
+        if (firstNew >= 0) {
+          selectTrack(firstNew, { play: true });
+        } else if (dupes) {
+          flashStatus("STATUS: ALREADY LOADED");
+        }
+      }
+
+      // =======================================================================
+      // EVENT WIRING
+      // =======================================================================
+      // Audio element events drive the UI
+      audioElement.addEventListener("play", () => {
+        updatePlayStateUI(true);
+        renderTracklist();
+      });
+      audioElement.addEventListener("pause", () => {
+        updatePlayStateUI(false);
+        renderTracklist();
+        saveState();
+      });
+
+      audioElement.addEventListener("loadedmetadata", () => {
+        const d = audioElement.duration;
+        if (isFinite(d) && d > 0) {
+          timeDuration.textContent = formatTime(d);
+          const t = tracks[currentIndex];
+          if (t && !t.duration) {
+            t.duration = d;
+            renderTracklist();
+          }
+        }
+        if (pendingSeek != null) {
+          const target = Math.min(pendingSeek, Math.max(0, (d || 0) - 0.1));
+          audioElement.currentTime = target;
+          pendingSeek = null;
+          timeCurrent.textContent = formatTime(target);
+          if (d) playbackBar.style.width = `${(target / d) * 100}%`;
+        }
+      });
+
+      audioElement.addEventListener("timeupdate", () => {
+        const d = audioElement.duration;
+        if (!d || !isFinite(d) || pendingSeek != null) return;
+        playbackBar.style.width = `${(audioElement.currentTime / d) * 100}%`;
+        timeCurrent.textContent = formatTime(audioElement.currentTime);
+        if (Date.now() - lastSave > 1000) {
+          lastSave = Date.now();
+          saveState();
+        }
+      });
+
+      audioElement.addEventListener("ended", () => {
+        // Repeat-one is handled natively via audioElement.loop
+        const isLast = currentIndex === tracks.length - 1;
+        if (tracks.length > 1 && (isShuffle || !isLast)) {
+          nextTrack();
+          audioElement.play().catch(() => {});
+        } else {
+          audioElement.currentTime = 0;
+          playbackBar.style.width = "0%";
+          timeCurrent.textContent = "00:00";
+        }
+      });
+
+      audioElement.addEventListener("error", () => {
+        if (!audioElement.getAttribute("src")) return;
+        flashStatus("ERR: CANNOT DECODE", 2500);
+      });
+
+      // Play / Pause
+      playBtn.addEventListener("click", () => {
+        playTactileFeedback("click");
+        if (!tracks.length) return flashStatus("STATUS: NO MEDIA");
+        initAudioGraph();
+        if (currentIndex < 0) return selectTrack(0, { play: true });
+        if (audioElement.paused) audioElement.play().catch(() => {});
+        else audioElement.pause();
+      });
+
+      // Scrubbing
+      timelineContainer.addEventListener("click", (e) => {
+        playTactileFeedback("click");
+        const d = audioElement.duration;
+        if (!d || !isFinite(d)) return;
+        const rect = timelineContainer.getBoundingClientRect();
+        const fraction = Math.max(
+          0,
+          Math.min(1, (e.clientX - rect.left) / rect.width),
+        );
+        audioElement.currentTime = fraction * d;
+        playbackBar.style.width = `${fraction * 100}%`;
+        timeCurrent.textContent = formatTime(audioElement.currentTime);
+        saveState();
+      });
+
+      // File upload (multiple files supported)
+      audioFileInput.addEventListener("change", async function () {
+        const files = [...this.files];
+        this.value = ""; // allow re-selecting the same file later
+        if (!files.length) return;
+        playTactileFeedback("beep");
+        await addFiles(files);
+      });
+
+      // Transport buttons
+      btnNext.addEventListener("click", () => {
+        playTactileFeedback("click");
+        nextTrack();
+      });
+      btnPrev.addEventListener("click", () => {
+        playTactileFeedback("click");
+        prevTrack();
+      });
+
+      btnShuffle.addEventListener("click", () => {
+        playTactileFeedback("click");
+        isShuffle = !isShuffle;
+        btnShuffle.classList.toggle("active-state", isShuffle);
+        flashStatus(isShuffle ? "MODE: SHUFFLE" : "MODE: NORMAL");
+        saveState();
+      });
+
+      btnLoop.addEventListener("click", () => {
+        playTactileFeedback("click");
+        isLooping = !isLooping;
+        audioElement.loop = isLooping;
+        btnLoop.classList.toggle("active-state", isLooping);
+        flashStatus(isLooping ? "MODE: REPEAT ON" : "MODE: REPEAT OFF");
+        saveState();
+      });
+
+      // Tracklist panel
+      btnTracklist.addEventListener("click", () => {
+        playTactileFeedback("click");
+        toggleTracklist();
+      });
+      closeTracklist.addEventListener("click", () => {
+        playTactileFeedback("click");
+        closeModals();
+      });
+      btnClearAll.addEventListener("click", () => {
+        if (!tracks.length) return;
+        if (!clearArmed) {
+          clearArmed = true;
+          btnClearAll.textContent = "CONFIRM?";
+          btnClearAll.classList.add("text-red-400");
+          return;
+        }
+        playTactileFeedback("del");
+        resetClearConfirm();
+        clearAll();
+      });
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeModals();
+      });
+
+      // Volume
+      function applyVolume() {
+        const val = parseFloat(volSlider.value);
+        volReadout.textContent = `${Math.round(val * 100)}%`;
+        audioElement.volume = val;
+        if (masterGain) masterGain.gain.setValueAtTime(val, audioCtx.currentTime);
+      }
+      volSlider.addEventListener("input", () => {
+        initAudioGraph();
+        applyVolume();
+        saveState();
+      });
+
+      // Power switch (CRT flicker)
+      hotspotToggle.addEventListener("click", () => {
+        playTactileFeedback("power");
+        isDeviceOn = !isDeviceOn;
+        if (isDeviceOn) {
+          screenContainer.classList.remove("crt-off");
+          screenContainer.classList.add("crt-turn-on");
+          setTimeout(() => screenContainer.classList.remove("crt-turn-on"), 400);
+          if (resumeAfterPowerOn && audioElement.getAttribute("src")) {
+            audioElement.play().catch(() => {});
+          }
+          resumeAfterPowerOn = false;
+          updatePlayStateUI(!audioElement.paused);
+        } else {
+          resumeAfterPowerOn = !audioElement.paused;
+          screenContainer.classList.add("crt-off");
+          audioElement.pause();
+          closeModals();
+          updatePlayStateUI(false);
+        }
+        saveState();
+      });
+
+      // SYS: diagnostics
+      hotspotSys.addEventListener("click", () => {
+        playTactileFeedback("beep");
+        const opening = sysDiagModal.classList.contains("hidden");
+        closeModals();
+        if (opening) sysDiagModal.classList.remove("hidden");
+      });
+      closeDiag.addEventListener("click", () => {
+        playTactileFeedback("click");
+        closeModals();
+      });
+
+      // DEL: restart track + reset filter knob
+      hotspotDel.addEventListener("click", () => {
+        playTactileFeedback("del");
+        if (audioElement.getAttribute("src")) {
+          audioElement.currentTime = 0;
+          playbackBar.style.width = "0%";
+          timeCurrent.textContent = "00:00";
+        }
+        knobAngle = KNOB_OPEN;
+        applyKnob();
+        flashStatus("SYS: FLUSHED");
+        saveState();
+      });
+
+      // INS: synthesized telemetry chirp
+      hotspotIns.addEventListener("click", () => {
+        playTactileFeedback("beep");
+        initAudioGraph();
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        [587, 880, 1174, 1760].forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+          g.gain.setValueAtTime(0.06, now + idx * 0.05);
+          g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.07);
+          osc.connect(g);
+          g.connect(masterGain || audioCtx.destination);
+          osc.start(now + idx * 0.05);
+          osc.stop(now + idx * 0.05 + 0.08);
+        });
+        flashStatus("SIGNAL: INJECTED");
+      });
+
+      // Rotary knob: low-pass filter cutoff (click or drag)
+      function applyKnob() {
+        knobDot.style.transform = `rotate(${knobAngle}deg) translateY(-14px)`;
+        if (biquadFilter) {
+          biquadFilter.frequency.setValueAtTime(
+            knobCutoff(),
+            audioCtx.currentTime,
+          );
+        }
+      }
+      function rotateKnobBy(delta) {
+        knobAngle = (knobAngle + delta + 360) % 360;
+        applyKnob();
+        saveState();
+      }
+
+      hotspotKnob.addEventListener("click", () => {
+        playTactileFeedback("click");
+        rotateKnobBy(45);
+      });
+
+      let isDraggingKnob = false;
+      let startY = 0;
+      hotspotKnob.addEventListener("mousedown", (e) => {
+        isDraggingKnob = true;
+        startY = e.clientY;
+      });
+      window.addEventListener("mousemove", (e) => {
+        if (!isDraggingKnob) return;
+        const deltaY = startY - e.clientY;
+        if (Math.abs(deltaY) > 4) {
+          rotateKnobBy(deltaY > 0 ? 12 : -12);
+          startY = e.clientY;
+        }
+      });
+      window.addEventListener("mouseup", () => (isDraggingKnob = false));
+
+      hotspotKnob.addEventListener("touchstart", (e) => {
+        isDraggingKnob = true;
+        startY = e.touches[0].clientY;
+      });
+      window.addEventListener("touchmove", (e) => {
+        if (!isDraggingKnob) return;
+        const deltaY = startY - e.touches[0].clientY;
+        if (Math.abs(deltaY) > 4) {
+          rotateKnobBy(deltaY > 0 ? 15 : -15);
+          startY = e.touches[0].clientY;
+        }
+      });
+      window.addEventListener("touchend", () => (isDraggingKnob = false));
+
+      // Save position when the tab is hidden or closed
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) saveState();
+      });
+      window.addEventListener("pagehide", saveState);
+
+      // =======================================================================
+      // BOOT: restore saved session (library + settings), start empty otherwise
+      // =======================================================================
+      (async function boot() {
+        const st = loadState();
+        if (st) {
+          isShuffle = !!st.shuffle;
+          isLooping = !!st.loop;
+          isDeviceOn = st.deviceOn !== false;
+          if (typeof st.volume === "number") volSlider.value = st.volume;
+          if (typeof st.knobAngle === "number") knobAngle = st.knobAngle;
+        }
+        applyVolume();
+        applyKnob();
+        audioElement.loop = isLooping;
+        btnShuffle.classList.toggle("active-state", isShuffle);
+        btnLoop.classList.toggle("active-state", isLooping);
+        if (!isDeviceOn) screenContainer.classList.add("crt-off");
+
+        resetDisplay();
+        await loadLibrary();
+        updateCounters();
+        renderTracklist();
+
+        if (tracks.length) {
+          const saved = st ? tracks.findIndex((t) => t.id === st.trackId) : -1;
+          selectTrack(saved >= 0 ? saved : 0, {
+            play: false,
+            time: saved >= 0 && st ? st.time || 0 : 0,
+          });
+        }
+        updatePlayStateUI(false);
+
+      })();
+    </script>
+  </body>
+</html>
