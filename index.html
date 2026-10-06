@@ -202,7 +202,73 @@
         filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.3))
           drop-shadow(0 0 10px rgba(255, 42, 42, 0.25));
       }
-    
+
+      /* PEAK LIM lamp: dark until the signal actually hits full scale */
+      #peak-indicator {
+        color: #5a2326;
+        transition:
+          color 0.06s linear,
+          text-shadow 0.06s linear;
+      }
+      #peak-indicator .led {
+        background: #2a0a0d;
+        box-shadow: 0 0 0 0.5px #6a2428 inset;
+        transition:
+          background 0.06s linear,
+          box-shadow 0.06s linear;
+      }
+      #peak-indicator.lit {
+        color: #ff3b3b;
+        text-shadow: 0 0 6px rgba(255, 42, 42, 0.9);
+      }
+      #peak-indicator.lit .led {
+        background: #ff2a2a;
+        box-shadow:
+          0 0 6px #ff2a2a,
+          0 0 12px rgba(255, 42, 42, 0.7);
+      }
+
+      /* Knob-mode tabs (FLT / SPD / VOL / EQ) */
+      .knob-tab {
+        color: #4b5560;
+        border-bottom: 1px solid transparent;
+        cursor: pointer;
+        transition: color 0.08s linear;
+      }
+      .knob-tab:hover {
+        color: #cbd5e1;
+      }
+      .knob-tab.on {
+        color: #ffffff;
+        border-bottom-color: rgba(255, 255, 255, 0.85);
+        text-shadow:
+          0 0 5px rgba(255, 255, 255, 0.95),
+          0 0 12px rgba(255, 255, 255, 0.45);
+      }
+
+      /* DEL hotspot: armed state while waiting for the confirm press */
+      .hotspot-armed {
+        background: rgba(255, 70, 50, 0.3) !important;
+        border-color: rgba(255, 110, 90, 0.8) !important;
+        animation: armedPulse 0.5s ease-in-out infinite alternate;
+      }
+      @keyframes armedPulse {
+        from {
+          opacity: 0.55;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      /* Hotspots: no text-selection / long-press callout on touch */
+      .hold-btn {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: manipulation;
+      }
+
       /* Slim scrollbar for the tracklist */
       .deck-scroll {
         scrollbar-width: thin;
@@ -279,7 +345,7 @@
           <div class="space-y-1 font-mono text-zinc-300 py-1">
             <div class="flex justify-between">
               <span class="">DSP ENGINE:</span
-              ><span class="text-white text-glow-cyan">ONLINE [48kHz]</span>
+              ><span class="text-white text-glow-cyan" id="diag-dsp">ONLINE [48kHz]</span>
             </div>
             <div class="flex justify-between">
               <span class="">AUDIO BUFFER:</span
@@ -299,6 +365,18 @@
               <span class="">BAND CHANNELS:</span
               ><span class="text-white text-glow-cyan">7-BAND FFT</span>
             </div>
+            <div class="flex justify-between">
+              <span class="">OUTPUT PEAK:</span
+              ><span class="text-zinc-200" id="diag-peak">-- dBFS</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="">CLIP EVENTS:</span
+              ><span class="text-zinc-200" id="diag-clips">0</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="">KNOB / VIZ:</span
+              ><span class="text-zinc-200" id="diag-modes">FILTER / BARS</span>
+            </div>
           </div>
           <div
             class="border-t border-white/20 pt-1 text-[7px] text-zinc-400 flex justify-between"
@@ -317,7 +395,9 @@
           >
             <span class="font-bold flex items-center gap-1"
               ><i class="ph-bold ph-list-numbers"></i> TRACKLIST
-              <span class="text-zinc-400 font-normal" id="tracklist-total">[00]</span></span
+              <span class="text-zinc-400 font-normal" id="tracklist-total"
+                >[00]</span
+              ></span
             >
             <span
               class="text-zinc-400 cursor-pointer hover:text-white"
@@ -366,23 +446,37 @@
           <div
             class="flex justify-between items-center text-[7px] text-zinc-500 uppercase tracking-wider border-b border-zinc-900/90 pb-0.5 mb-0.5"
           >
-            <span class="text-zinc-400">SPECTRUM FREQ (dB)</span>
-            <span
-              class="text-red-500 flex items-center gap-0.5 font-bold"
-              id="peak-indicator"
+            <span class="text-zinc-400 truncate" id="viz-title"
+              >SPECTRUM FREQ (dB)</span
             >
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button
+                class="tactile-btn rounded-sm px-1 py-[1px] flex items-center gap-0.5 border border-zinc-700/60 hover:border-white/60 text-[6.5px] font-bold text-zinc-300 hover:text-white transition"
+                id="btn-viz-mode"
+                title="Visualizer mode: bars / oscilloscope / spectrogram"
+              >
+                <i class="ph-bold ph-chart-bar text-[8px]" id="viz-icon"></i>
+                <span id="viz-mode-label">BARS</span>
+              </button>
               <span
-                class="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_6px_#ff2a2a] inline-block animate-ping"
-              ></span>
-              PEAK LIM
-            </span>
+                class="flex items-center gap-0.5 font-bold"
+                id="peak-indicator"
+                title="Lights when the signal peaks at full scale"
+              >
+                <span
+                  class="led w-1 h-1 rounded-full inline-block"
+                  id="peak-led"
+                ></span>
+                PEAK LIM
+              </span>
+            </div>
           </div>
           <!-- Real-Time Segmented LED Canvas with High-Tech Phosphor Bloom -->
           <div
             class="relative w-full flex-1 flex items-center justify-center min-h-[90px] overflow-hidden"
           >
             <canvas
-              class="w-full h-full block"
+              class="w-full h-full block touch-none"
               height="150"
               id="visualizer-canvas"
               width="300"
@@ -390,7 +484,8 @@
           </div>
           <!-- Frequency Channel Legend: 63, 160, 400, 1k, 2.5k, 6.3k, 16k -->
           <div
-            class="grid grid-cols-7 text-center font-mono text-[7.5px] pt-0.5 border-t border-zinc-800/80 text-zinc-400 font-semibold tracking-tighter"
+            class="grid grid-cols-7 text-center font-mono text-[7.5px] pt-0.5 border-t border-zinc-800/80 text-zinc-400 font-semibold tracking-tighter transition-opacity duration-150"
+            id="freq-legend"
           >
             <span class="">63</span>
             <span class="">160</span>
@@ -410,7 +505,9 @@
             <span class="text-zinc-500 font-mono" id="status-tag"
               >STATUS: NO MEDIA</span
             >
-            <span class="text-zinc-500 font-mono" id="track-counter">TRK --/--</span>
+            <span class="text-zinc-500 font-mono" id="track-counter"
+              >TRK --/--</span
+            >
           </div>
           <div
             class="truncate font-sans font-bold text-[11px] sm:text-[12px] tracking-wide text-zinc-100 uppercase mt-0.5 leading-tight"
@@ -424,21 +521,19 @@
             <span class="truncate max-w-[70%]" id="artist-name"
               >INSERT MEDIA // LOAD FILE</span
             >
-            <span class="text-zinc-400 uppercase" id="codec-label"
-              >--</span
-            >
+            <span class="text-zinc-400 uppercase" id="codec-label">--</span>
           </div>
-          <!-- Progress Scrubber -->
+          <!-- Waveform Scrubber (peaks decoded once per track, cached in IndexedDB) -->
           <div class="mt-1" data-purpose="playback-progress">
             <div
-              class="relative w-full h-1.5 bg-zinc-950 border border-zinc-800 rounded-xs cursor-pointer overflow-hidden group hover:border-white/50"
+              class="relative w-full h-[22px] bg-zinc-950 border border-zinc-800 rounded-xs cursor-pointer overflow-hidden hover:border-white/50 touch-none"
               id="timeline-container"
+              title="Click or drag to seek"
             >
-              <div
-                class="h-full bg-gradient-to-r from-zinc-400 to-white w-[0%] shadow-[0_0_8px_#ffffff] transition-[width] duration-100"
-                id="playback-bar"
-                style="width: 0%"
-              ></div>
+              <canvas
+                class="absolute inset-0 w-full h-full block"
+                id="wave-canvas"
+              ></canvas>
             </div>
             <div
               class="flex justify-between text-[7.5px] font-mono text-zinc-400 mt-0.5"
@@ -519,7 +614,7 @@
                 type="file"
               />
             </label>
-          <button
+            <button
               class="tactile-btn rounded px-1.5 py-0.5 flex items-center gap-1 border border-zinc-700/60 hover:border-white/60 transition text-[7.5px] uppercase font-bold text-zinc-300"
               id="btn-tracklist"
               title="Tracklist"
@@ -551,6 +646,30 @@
                 value="0.8"
               />
             </div>
+            <!-- Rotary knob readout + mode tabs -->
+            <div
+              class="pl-1.5 border-l border-zinc-800/80"
+              id="knob-panel"
+              title="Tap a tab to choose what the knob controls"
+            >
+              <div class="flex justify-between text-[7px] text-zinc-400 mb-0.5">
+                <span id="knob-mode-label">KNOB // FILTER</span>
+                <span
+                  class="text-white text-glow-cyan font-bold"
+                  id="knob-readout"
+                  >OPEN</span
+                >
+              </div>
+              <div
+                class="grid grid-cols-4 text-center text-[6.5px] font-bold tracking-wider leading-[11px]"
+                id="knob-tabs"
+              >
+                <span class="knob-tab on" data-mode="filter">FLT</span>
+                <span class="knob-tab" data-mode="speed">SPD</span>
+                <span class="knob-tab" data-mode="volume">VOL</span>
+                <span class="knob-tab" data-mode="eq">EQ</span>
+              </div>
+            </div>
           </div>
         </section>
       </div>
@@ -560,24 +679,24 @@
       <!-- ========================================================================= -->
       <!-- SYS Tactile Hotspot -->
       <button
-        class="absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-amber-400/20 active:bg-amber-400/40 border border-transparent hover:border-amber-400/40 transition duration-75"
+        class="hold-btn absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-amber-400/20 active:bg-amber-400/40 border border-transparent hover:border-amber-400/40 transition duration-75"
         id="hotspot-sys"
         style="left: 11.21%; top: 64.74%; width: 10.45%; height: 5.73%"
-        title="SYS Diagnostics"
+        title="SYS: diagnostics (hold: previous knob mode)"
       ></button>
       <!-- DEL Tactile Hotspot -->
       <button
-        class="absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-red-400/20 active:bg-red-400/40 border border-transparent hover:border-red-400/40 transition duration-75"
+        class="hold-btn absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-red-400/20 active:bg-red-400/40 border border-transparent hover:border-red-400/40 transition duration-75"
         id="hotspot-del"
         style="left: 24.22%; top: 64.74%; width: 10.45%; height: 5.73%"
-        title="DEL Reset / Eject"
+        title="DEL: remove current track (press twice)"
       ></button>
       <!-- INS Tactile Hotspot -->
       <button
-        class="absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-amber-400/20 active:bg-amber-400/40 border border-transparent hover:border-amber-400/40 transition duration-75"
+        class="hold-btn absolute z-20 cursor-pointer rounded bg-amber-500/0 hover:bg-amber-400/20 active:bg-amber-400/40 border border-transparent hover:border-amber-400/40 transition duration-75"
         id="hotspot-ins"
         style="left: 37.23%; top: 64.74%; width: 10.45%; height: 5.73%"
-        title="INS Cyber Tone Injection"
+        title="INS: load track file (hold: next knob mode)"
       ></button>
       <!-- ON/OFF Toggle Switch Hotspot -->
       <button
@@ -588,10 +707,10 @@
       ></button>
       <!-- Rotary Dial Knob Hotspot with Crisp White Rotatable Indicator Glow -->
       <div
-        class="absolute z-20 cursor-pointer rounded-full flex items-center justify-center hover:bg-white/10 active:scale-95 transition"
+        class="absolute z-20 cursor-pointer rounded-full flex items-center justify-center hover:bg-white/10 active:scale-95 transition touch-none"
         id="hotspot-knob"
         style="left: 62.2%; top: 63.28%; width: 16.15%; height: 8.85%"
-        title="Hardware Volume / Filter Rotary Dial"
+        title="Rotary dial: drag or scroll. Mode shown on screen (tap in EQ mode: next band)"
       >
         <div
           class="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_10px_#ffffff,0_0_3px_#ffffff] transition-transform duration-75"
@@ -613,12 +732,49 @@
       const DESIGN_H = DESIGN_W * (1920 / 1053);
       const FILL = 0.96; // 0-1: how much of the window the rig fills
       const MAX_SCALE = 4;
-      const LOGICAL_W = 300; // visualizer drawing space
-      const LOGICAL_H = 150;
+      const LOGICAL_W = 300; // visualizer drawing width (height follows the real box)
+      const REF_H = 150; // height the original bar geometry was tuned for
       const NUM_BARS = 7;
       const SEGMENTS_PER_BAR = 16;
-      const GLOW_STRENGTH = 1; // bar glow: 0 = off, 1 = default, 2 = intense
-      const KNOB_OPEN = 351; // knob angle that equals a fully open filter
+      const GLOW_STRENGTH = 1; // glow: 0 = off, 1 = default, 2 = intense
+
+      // Signal path
+      const DRIVE_GAIN = 1.35; // set to 1 if PEAK LIM should reflect the raw mix
+      const CLIP_THRESHOLD = 0.99; // |sample| at/above this counts as clipping
+      const CLIP_HOLD_MS = 450; // how long PEAK LIM stays lit after a clip
+
+      // EQ: 7 peaking bands that match the labels under the bars
+      const BAND_FC = [63, 160, 400, 1000, 2500, 6300, 16000];
+      const BAND_LABEL = ["63", "160", "400", "1k", "2.5k", "6.3k", "16k"];
+      const BAND_RATIO = Math.pow(16000 / 63, 1 / (NUM_BARS - 1)); // ~2.52x per band
+      const EQ_RANGE = 12; // +/- dB
+      const EQ_STEP = 0.5; // dB
+      const EQ_Q = 1.1;
+
+      // Rotary knob
+      const KNOB_MODES = ["filter", "speed", "volume", "eq"];
+      const KNOB_NAMES = {
+        filter: "FILTER",
+        speed: "SPEED",
+        volume: "VOLUME",
+        eq: "EQ",
+      };
+      const FILTER_MIN = 200; // Hz, knob fully counter-clockwise
+      const FILTER_MAX = 22000; // Hz, knob fully clockwise (= open)
+      const PRESERVE_PITCH = true; // speed changes keep the original pitch
+      const KNOB_DRAG_PER_PX = 0.006; // knob travel per dragged pixel
+
+      // Buttons
+      const HOLD_MS = 450; // hold SYS / INS this long to change knob mode
+      const DEL_NEEDS_CONFIRM = true; // DEL must be pressed twice
+      const DEL_CONFIRM_MS = 2500;
+
+      // Waveform scrubber
+      const PEAK_BUCKETS = 640;
+      const PEAKS_VERSION = 1; // bump to invalidate cached waveforms
+      const MAX_DECODE_SECONDS = 20 * 60; // skip waveform for longer tracks
+      const MAX_DECODE_BYTES = 300 * 1024 * 1024;
+      const CLIP_Q = Math.round(CLIP_THRESHOLD * 255);
 
       // Visualizer fade timing (seconds). Bigger half-life = slower fade.
       const ATTACK_HALF_LIFE = 0.04;
@@ -626,10 +782,18 @@
       const FALL_HALF_LIFE_PAUSED = 0.45;
       const PEAK_FALL_PER_SEC = 7; // segments per second
 
+      // Spectrogram (frequency runs left to right, aligned with the 7 columns)
+      const SG_W = 168;
+      const SG_H = 96;
+      const SG_ROWS_PER_SEC = 26;
+      const SCOPE_SAMPLES = 1024;
+
       // Persistence
       const STATE_KEY = "cyberdeck.ap96.state.v1";
       const DB_NAME = "cyberdeck-ap96";
+      const DB_VERSION = 2; // v2 adds the "peaks" store
       const DB_STORE = "tracks";
+      const PEAKS_STORE = "peaks";
       const PW_KEY = "cyberdeck.ap96.pw";
 
       // Vercel Blob helpers ------------------------------------------------
@@ -679,12 +843,31 @@
       let tracks = []; // { id, name, type, size, duration, blob }
       let currentIndex = -1;
       let currentUrl = null;
-      let knobAngle = KNOB_OPEN;
       let resumeAfterPowerOn = false;
       let pendingSeek = null; // seconds to jump to once metadata loads
       let persistOK = true; // false if IndexedDB is unavailable / full
       let lastSave = 0;
       let flashToken = 0;
+
+      // Knob + EQ model
+      let knobMode = "filter";
+      let filterN = 1; // 0..1, 1 = open
+      let speedN = 0.5; // 0..1, 0.5 = 1.0x
+      const eqGains = new Array(NUM_BARS).fill(0); // dB per band
+      let eqSel = 0; // band the knob edits in EQ mode
+
+      // Visualizer
+      let vizMode = "bars"; // "bars" | "scope" | "spectro"
+      let logicalH = REF_H;
+      let canvasK = 1; // canvas pixels per logical pixel (set in applyScale)
+      let hoverBand = -1;
+      let eqDrag = null; // { band } while a bar is being dragged
+
+      // Clip meter
+      let clipUntil = 0;
+      let clipCount = 0;
+      let peakMax = 0;
+      let lampOn = false;
 
       // Audio API nodes
       let audioCtx = null;
@@ -693,8 +876,10 @@
       let driveGain = null;
       let mediaSourceNode = null;
       let biquadFilter = null;
+      let eqNodes = null;
       let freqData = null;
-      let canvasK = 1; // canvas pixels per logical pixel (set in applyScale)
+      let timeData = null;
+      let bandBins = null;
 
       // =======================================================================
       // DOM
@@ -702,6 +887,8 @@
       const $ = (id) => document.getElementById(id);
       const canvas = $("visualizer-canvas");
       const ctx = canvas.getContext("2d");
+      const waveCanvas = $("wave-canvas");
+      const wctx = waveCanvas.getContext("2d");
       const rigRoot = $("rig-root");
       const audioElement = $("core-audio-element");
       const playBtn = $("btn-play");
@@ -716,19 +903,31 @@
       const codecLabel = $("codec-label");
       const timeCurrent = $("time-current");
       const timeDuration = $("time-duration");
-      const playbackBar = $("playback-bar");
       const timelineContainer = $("timeline-container");
       const volSlider = $("volume-slider");
       const volReadout = $("vol-readout");
       const hotspotToggle = $("hotspot-toggle");
       const hotspotKnob = $("hotspot-knob");
       const knobDot = $("knob-dot");
+      const knobPanel = $("knob-panel");
+      const knobModeLabel = $("knob-mode-label");
+      const knobReadout = $("knob-readout");
+      const knobTabs = [...document.querySelectorAll(".knob-tab")];
       const hotspotSys = $("hotspot-sys");
       const hotspotDel = $("hotspot-del");
       const hotspotIns = $("hotspot-ins");
       const sysDiagModal = $("sys-diag-modal");
       const closeDiag = $("close-diag");
       const diagLibrary = $("diag-library");
+      const diagPeak = $("diag-peak");
+      const diagClips = $("diag-clips");
+      const diagModes = $("diag-modes");
+      const peakIndicator = $("peak-indicator");
+      const vizTitle = $("viz-title");
+      const vizIcon = $("viz-icon");
+      const vizModeLabel = $("viz-mode-label");
+      const btnVizMode = $("btn-viz-mode");
+      const freqLegend = $("freq-legend");
       const btnShuffle = $("btn-shuffle");
       const btnPrev = $("btn-prev");
       const btnNext = $("btn-next");
@@ -742,28 +941,10 @@
       const btnClearAll = $("btn-clear-all");
 
       // =======================================================================
-      // DISPLAY SCALING (whole rig scales as one unit; canvas stays sharp)
-      // =======================================================================
-      function applyScale() {
-        const s = Math.min(
-          (window.innerHeight * FILL) / DESIGN_H,
-          (window.innerWidth * FILL) / DESIGN_W,
-          MAX_SCALE,
-        );
-        rigRoot.style.transform = `scale(${s})`;
-        const k = Math.max(1, s * (window.devicePixelRatio || 1));
-        canvas.width = Math.round(LOGICAL_W * k);
-        canvas.height = Math.round(LOGICAL_H * k);
-        ctx.setTransform(k, 0, 0, k, 0, 0);
-        canvasK = k;
-      }
-      window.addEventListener("resize", applyScale);
-      applyScale();
-
-      // =======================================================================
       // HELPERS
       // =======================================================================
       const pad2 = (n) => String(n).padStart(2, "0");
+      const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
       function formatTime(sec) {
         if (!isFinite(sec) || sec < 0) return "00:00";
@@ -779,6 +960,17 @@
         const m = /\.([a-z0-9]+)$/i.exec(name);
         return m ? m[1].toUpperCase() : "AUDIO";
       }
+
+      function fmtHz(hz) {
+        if (hz < 1000) return String(Math.round(hz));
+        return (hz / 1000).toFixed(hz >= 10000 ? 1 : 2).replace(/\.?0+$/, "") + "k";
+      }
+      const fmtDb = (g) => `${g > 0 ? "+" : ""}${g.toFixed(1)}`;
+
+      // Knob value (0..1) <-> real parameter
+      const filterHz = (n) => FILTER_MIN * Math.pow(FILTER_MAX / FILTER_MIN, n);
+      const speedFromN = (n) => Math.pow(2, (n - 0.5) * 2); // 0.5x .. 2x
+      const hasTrack = () => currentIndex >= 0 && !!tracks[currentIndex];
 
       // =======================================================================
       // STATUS LINE
@@ -823,7 +1015,7 @@
       }
 
       // =======================================================================
-      // PERSISTENCE: small state in localStorage, audio files in IndexedDB
+      // PERSISTENCE: small state in localStorage, audio + waveforms in IndexedDB
       // =======================================================================
       function saveState() {
         try {
@@ -834,13 +1026,24 @@
               trackId: t ? t.id : null,
               time: pendingSeek ?? (audioElement.currentTime || 0),
               volume: parseFloat(volSlider.value),
-              knobAngle,
               shuffle: isShuffle,
               loop: isLooping,
               deviceOn: isDeviceOn,
+              knobMode,
+              filterN,
+              speedN,
+              eq: eqGains,
+              eqSel,
+              viz: vizMode,
             }),
           );
         } catch (e) {}
+      }
+
+      let saveTimer = null;
+      function scheduleSave() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveState, 250);
       }
 
       function loadState() {
@@ -856,25 +1059,38 @@
         if (!dbPromise) {
           dbPromise = new Promise((resolve, reject) => {
             if (!window.indexedDB) return reject(new Error("no indexedDB"));
-            const req = indexedDB.open(DB_NAME, 1);
-            req.onupgradeneeded = () =>
-              req.result.createObjectStore(DB_STORE, {
-                keyPath: "id",
-                autoIncrement: true,
-              });
-            req.onsuccess = () => resolve(req.result);
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = () => {
+              const db = req.result;
+              if (!db.objectStoreNames.contains(DB_STORE))
+                db.createObjectStore(DB_STORE, {
+                  keyPath: "id",
+                  autoIncrement: true,
+                });
+              if (!db.objectStoreNames.contains(PEAKS_STORE))
+                db.createObjectStore(PEAKS_STORE, { keyPath: "id" });
+            };
+            req.onsuccess = () => {
+              const db = req.result;
+              // let a newer tab upgrade the schema instead of blocking it
+              db.onversionchange = () => {
+                db.close();
+                dbPromise = null;
+              };
+              resolve(db);
+            };
             req.onerror = () => reject(req.error);
           });
         }
         return dbPromise;
       }
 
-      function idb(mode, fn) {
+      function idb(mode, fn, store = DB_STORE) {
         return openDB().then(
           (d) =>
             new Promise((resolve, reject) => {
-              const tx = d.transaction(DB_STORE, mode);
-              const req = fn(tx.objectStore(DB_STORE));
+              const tx = d.transaction(store, mode);
+              const req = fn(tx.objectStore(store));
               tx.oncomplete = () => resolve(req ? req.result : undefined);
               tx.onerror = () => reject(tx.error);
               tx.onabort = () => reject(tx.error);
@@ -882,9 +1098,13 @@
         );
       }
 
-      const dbAdd = (rec) => idb("readwrite", (s) => s.add(rec));
-      const dbDelete = (id) => idb("readwrite", (s) => s.delete(id));
-      const dbClear = () => idb("readwrite", (s) => s.clear());
+      const dbGetPeaks = (id) => idb("readonly", (s) => s.get(id), PEAKS_STORE);
+      const dbPutPeaks = (rec) =>
+        idb("readwrite", (s) => s.put(rec), PEAKS_STORE);
+      const dbDeletePeaks = (id) =>
+        idb("readwrite", (s) => s.delete(id), PEAKS_STORE);
+      const dbClearPeaks = () =>
+        idb("readwrite", (s) => s.clear(), PEAKS_STORE);
 
       async function loadLibrary() {
         try {
@@ -908,9 +1128,9 @@
 
       // =======================================================================
       // WEB AUDIO ENGINE
+      // source -> lowpass -> 7-band EQ -> drive -> analyser -> master -> out
+      // The analyser feeds the bars, scope, spectrogram AND the PEAK LIM lamp.
       // =======================================================================
-      const knobCutoff = () => 400 + (knobAngle / 360) * 16000;
-
       function initAudioGraph() {
         if (!audioCtx) {
           const AudioContextClass =
@@ -918,22 +1138,40 @@
           audioCtx = new AudioContextClass();
 
           analyser = audioCtx.createAnalyser();
-          analyser.fftSize = 256;
+          analyser.fftSize = 2048;
           analyser.smoothingTimeConstant = 0.8;
           freqData = new Uint8Array(analyser.frequencyBinCount);
+          timeData = new Float32Array(analyser.fftSize);
 
           biquadFilter = audioCtx.createBiquadFilter();
           biquadFilter.type = "lowpass";
-          biquadFilter.frequency.value = knobCutoff();
+          biquadFilter.frequency.value = Math.min(
+            filterHz(filterN),
+            audioCtx.sampleRate / 2,
+          );
+
+          eqNodes = BAND_FC.map((fc, i) => {
+            const f = audioCtx.createBiquadFilter();
+            f.type = "peaking";
+            f.frequency.value = fc;
+            f.Q.value = EQ_Q;
+            f.gain.value = eqGains[i];
+            return f;
+          });
 
           driveGain = audioCtx.createGain();
-          driveGain.gain.value = 1.35;
+          driveGain.gain.value = DRIVE_GAIN;
 
           masterGain = audioCtx.createGain();
-          masterGain.gain.value = parseFloat(volSlider.value) || 0.8;
+          const v = parseFloat(volSlider.value);
+          masterGain.gain.value = isNaN(v) ? 0.8 : v;
 
-          // source -> filter -> driveGain -> analyser -> masterGain -> out
-          biquadFilter.connect(driveGain);
+          let prev = biquadFilter;
+          for (const f of eqNodes) {
+            prev.connect(f);
+            prev = f;
+          }
+          prev.connect(driveGain);
           driveGain.connect(analyser);
           analyser.connect(masterGain);
           masterGain.connect(audioCtx.destination);
@@ -942,8 +1180,24 @@
             mediaSourceNode = audioCtx.createMediaElementSource(audioElement);
             mediaSourceNode.connect(biquadFilter);
           } catch (e) {}
+
+          computeBandBins();
         }
         if (audioCtx.state === "suspended") audioCtx.resume();
+      }
+
+      // FFT bin range for each of the 7 bands (edges tile the spectrum)
+      function computeBandBins() {
+        const binHz = audioCtx.sampleRate / analyser.fftSize;
+        const half = Math.sqrt(BAND_RATIO);
+        bandBins = BAND_FC.map((fc) => {
+          const a = Math.max(1, Math.round(fc / half / binHz));
+          const b = Math.min(
+            analyser.frequencyBinCount - 1,
+            Math.max(a, Math.round((fc * half) / binHz)),
+          );
+          return [a, b];
+        });
       }
 
       // Tactile procedural sound effects for the hardware buttons
@@ -996,50 +1250,326 @@
       }
 
       // =======================================================================
-      // VISUALIZER (bars rise fast, fall slowly; fade gently when paused)
+      // KNOB + PARAMETERS (filter / speed / volume / eq)
+      // =======================================================================
+      function applyFilter() {
+        if (!biquadFilter) return;
+        const hz = Math.min(filterHz(filterN), audioCtx.sampleRate / 2);
+        biquadFilter.frequency.setTargetAtTime(hz, audioCtx.currentTime, 0.015);
+      }
+
+      function applySpeed() {
+        const r = speedFromN(speedN);
+        // defaultPlaybackRate survives the src change when a new track loads
+        audioElement.defaultPlaybackRate = r;
+        audioElement.playbackRate = r;
+      }
+
+      function applyVolume() {
+        const val = parseFloat(volSlider.value);
+        volReadout.textContent = `${Math.round(val * 100)}%`;
+        audioElement.volume = val;
+        if (masterGain)
+          masterGain.gain.setValueAtTime(val, audioCtx.currentTime);
+      }
+
+      function setEqGain(i, g) {
+        g = clamp(Math.round(g / EQ_STEP) * EQ_STEP, -EQ_RANGE, EQ_RANGE) || 0;
+        eqGains[i] = g;
+        if (eqNodes)
+          eqNodes[i].gain.setTargetAtTime(g, audioCtx.currentTime, 0.02);
+        updateKnobUI();
+        scheduleSave();
+      }
+
+      function getKnobN(mode = knobMode) {
+        switch (mode) {
+          case "filter":
+            return filterN;
+          case "speed":
+            return speedN;
+          case "volume":
+            return parseFloat(volSlider.value) || 0;
+          default:
+            return (eqGains[eqSel] + EQ_RANGE) / (2 * EQ_RANGE);
+        }
+      }
+
+      function setKnobN(n, mode = knobMode) {
+        n = clamp(n, 0, 1);
+        if (mode === "filter") {
+          filterN = n;
+          applyFilter();
+        } else if (mode === "speed") {
+          if (Math.abs(n - 0.5) < 0.012) n = 0.5; // detent at 1.00x
+          speedN = n;
+          applySpeed();
+        } else if (mode === "volume") {
+          volSlider.value = n.toFixed(2);
+          applyVolume();
+        } else {
+          setEqGain(eqSel, (n * 2 - 1) * EQ_RANGE);
+          return;
+        }
+        updateKnobUI();
+        scheduleSave();
+      }
+
+      function knobReadoutText() {
+        switch (knobMode) {
+          case "filter":
+            return filterN >= 0.995 ? "OPEN" : `LP ${fmtHz(filterHz(filterN))}`;
+          case "speed":
+            return `${speedFromN(speedN).toFixed(2)}x`;
+          case "volume":
+            return `${Math.round(getKnobN() * 100)}%`;
+          default:
+            return `${BAND_LABEL[eqSel]} ${fmtDb(eqGains[eqSel])}dB`;
+        }
+      }
+
+      function updateKnobUI() {
+        // 270 degree sweep: -135 (min) .. +135 (max), 12 o'clock = centre
+        knobDot.style.transform = `rotate(${-135 + getKnobN() * 270}deg) translateY(-14px)`;
+        knobModeLabel.textContent = `KNOB // ${KNOB_NAMES[knobMode]}`;
+        knobReadout.textContent = knobReadoutText();
+        knobTabs.forEach((t) =>
+          t.classList.toggle("on", t.dataset.mode === knobMode),
+        );
+        diagModes.textContent = `${KNOB_NAMES[knobMode]} / ${vizMode.toUpperCase()}`;
+      }
+
+      function setKnobMode(mode, announce = true) {
+        if (!KNOB_MODES.includes(mode)) mode = "filter";
+        knobMode = mode;
+        updateKnobUI();
+        if (announce) flashStatus(`KNOB: ${KNOB_NAMES[mode]}`);
+        scheduleSave();
+      }
+
+      function cycleKnobMode(dir = 1) {
+        const i = KNOB_MODES.indexOf(knobMode);
+        setKnobMode(KNOB_MODES[(i + dir + KNOB_MODES.length) % KNOB_MODES.length]);
+      }
+
+      // =======================================================================
+      // DISPLAY SCALING (whole rig scales as one unit; canvases stay sharp)
+      // =======================================================================
+      let waveW = 0;
+      let waveH = 0;
+
+      function sizeCanvases() {
+        const k = canvasK;
+        // Visualizer: fixed logical width, height follows the real box so
+        // nothing is stretched (and text stays undistorted)
+        const cw = canvas.clientWidth;
+        const ch = canvas.clientHeight;
+        if (cw > 0 && ch > 0) logicalH = Math.round((LOGICAL_W * ch) / cw);
+        canvas.width = Math.round(LOGICAL_W * k);
+        canvas.height = Math.round(logicalH * k);
+        ctx.setTransform(k, 0, 0, k, 0, 0);
+
+        // Waveform scrubber: 1 logical px = 1 CSS px
+        if (waveCanvas.clientWidth > 0 && waveCanvas.clientHeight > 0) {
+          waveW = waveCanvas.clientWidth;
+          waveH = waveCanvas.clientHeight;
+        }
+        if (waveW && waveH) {
+          waveCanvas.width = Math.round(waveW * k);
+          waveCanvas.height = Math.round(waveH * k);
+          wctx.setTransform(k, 0, 0, k, 0, 0);
+        }
+        wave.layerKey = "";
+      }
+
+      function applyScale() {
+        const s = Math.min(
+          (window.innerHeight * FILL) / DESIGN_H,
+          (window.innerWidth * FILL) / DESIGN_W,
+          MAX_SCALE,
+        );
+        rigRoot.style.transform = `scale(${s})`;
+        canvasK = Math.max(1, s * (window.devicePixelRatio || 1));
+        sizeCanvases();
+      }
+
+      // =======================================================================
+      // CLIP METER -> PEAK LIM lamp
+      // =======================================================================
+      function setLamp(on) {
+        if (on === lampOn) return;
+        lampOn = on;
+        peakIndicator.classList.toggle("lit", on);
+      }
+
+      function updateMeter(now, reading) {
+        let pk = 0;
+        if (reading && timeData) {
+          for (let i = 0; i < timeData.length; i++) {
+            const a = Math.abs(timeData[i]);
+            if (a > pk) pk = a;
+          }
+          if (pk > peakMax) peakMax = pk;
+        }
+        if (pk >= CLIP_THRESHOLD) {
+          if (now >= clipUntil) clipCount++; // count each new clip event once
+          clipUntil = now + CLIP_HOLD_MS;
+        }
+        setLamp(now < clipUntil);
+      }
+
+      let lastDiag = 0;
+      function updateDiag(now) {
+        if (now - lastDiag < 250 || sysDiagModal.classList.contains("hidden"))
+          return;
+        lastDiag = now;
+        diagPeak.textContent =
+          peakMax > 0 ? `${(20 * Math.log10(peakMax)).toFixed(1)} dBFS` : "-- dBFS";
+        diagClips.textContent = String(clipCount);
+        if (audioCtx) {
+          const el = $("diag-dsp");
+          if (el) el.textContent = `ONLINE [${Math.round(audioCtx.sampleRate / 1000)}kHz]`;
+        }
+      }
+
+      // =======================================================================
+      // VISUALIZER
       // =======================================================================
       const levels = new Array(NUM_BARS).fill(0); // smoothed bar heights
       const peakHolds = new Array(NUM_BARS).fill(0);
-      const binIndices = [1, 3, 7, 16, 32, 64, 110]; // 63Hz ... 16kHz
+      const bandVals = new Array(NUM_BARS).fill(0); // raw band energy 0..255
       let lastFrame = performance.now();
 
-      function drawVisualizer(now) {
-        requestAnimationFrame(drawVisualizer);
+      const VIZ_MODES = ["bars", "scope", "spectro"];
+      const VIZ_META = {
+        bars: { title: "SPECTRUM FREQ (dB)", label: "BARS", icon: "ph-chart-bar" },
+        scope: { title: "SCOPE TIME (AMP)", label: "SCOPE", icon: "ph-wave-sine" },
+        spectro: { title: "SPECTROGRAM (dB)", label: "SPECTRO", icon: "ph-grid-four" },
+      };
 
-        const dt = Math.min(0.1, (now - lastFrame) / 1000 || 0.016);
-        lastFrame = now;
+      function geom() {
+        const vs = logicalH / REF_H;
+        const paddingX = 12;
+        const colW = (LOGICAL_W - paddingX * 2) / NUM_BARS;
+        return {
+          vs,
+          paddingX,
+          colW,
+          barW: Math.floor(colW * 0.62),
+          top: 4 * vs,
+          bot: logicalH - 4 * vs,
+        };
+      }
 
+      function readBands() {
+        if (!bandBins) computeBandBins();
+        for (let i = 0; i < NUM_BARS; i++) {
+          const [a, b] = bandBins[i];
+          let mx = 0;
+          let sum = 0;
+          for (let j = a; j <= b; j++) {
+            const v = freqData[j];
+            if (v > mx) mx = v;
+            sum += v;
+          }
+          bandVals[i] = 0.6 * mx + (0.4 * sum) / (b - a + 1);
+        }
+      }
+
+      // ---- EQ handles drawn over the bars / spectrogram -------------------
+      function drawEqOverlay(g) {
+        const { paddingX, colW, barW, top, bot } = g;
+        const mid = (top + bot) / 2;
+        const half = (bot - top) / 2;
+        ctx.save();
+        ctx.shadowBlur = 0;
+        ctx.setLineDash([2, 3]);
+        ctx.lineWidth = 0.6;
+        ctx.strokeStyle = "rgba(255, 152, 36, 0.28)";
+        ctx.beginPath();
+        ctx.moveTo(paddingX, mid);
+        ctx.lineTo(paddingX + colW * NUM_BARS, mid);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '7px "Share Tech Mono", ui-monospace, monospace';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.lineJoin = "round";
+
+        for (let i = 0; i < NUM_BARS; i++) {
+          const gdb = eqGains[i];
+          const y = mid - (gdb / EQ_RANGE) * half;
+          const cx = paddingX + (i + 0.5) * colW;
+          const x0 = cx - barW / 2 - 2;
+          const x1 = cx + barW / 2 + 2;
+          const active = eqDrag && eqDrag.band === i;
+          const hot = active || i === eqSel || i === hoverBand;
+          const flat = gdb === 0 && !hot;
+
+          if (gdb !== 0) {
+            ctx.fillStyle = "rgba(255, 152, 36, 0.14)";
+            ctx.fillRect(x0, Math.min(y, mid), x1 - x0, Math.abs(y - mid));
+          }
+          const col = active || i === eqSel ? "#ffc266" : "#ff9824";
+          ctx.strokeStyle = flat ? "rgba(255, 152, 36, 0.55)" : col;
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.lineWidth = hot ? 2 : 1.4;
+          ctx.shadowColor = "rgba(255, 152, 36, 0.95)";
+          ctx.shadowBlur = (active ? 12 : flat ? 3 : 7) * canvasK;
+          ctx.beginPath();
+          ctx.moveTo(x0, y);
+          ctx.lineTo(x1, y);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.fillRect(x0 - 1.5, y - 2, 1.5, 4);
+          ctx.fillRect(x1, y - 2, 1.5, 4);
+
+          if (gdb !== 0 || active || i === hoverBand) {
+            const txt = fmtDb(gdb);
+            const ty = clamp(gdb >= 0 ? y - 6 : y + 6, top + 4, bot - 4);
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+            ctx.strokeText(txt, cx, ty);
+            ctx.fillStyle = active || i === eqSel ? "#ffd9a0" : "rgba(255, 152, 36, 0.95)";
+            ctx.fillText(txt, cx, ty);
+          }
+        }
+        ctx.restore();
+      }
+
+      function drawColumnHover(g) {
+        const i = eqDrag ? eqDrag.band : hoverBand;
+        if (i < 0) return;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.035)";
+        ctx.fillRect(g.paddingX + i * g.colW, g.top, g.colW, g.bot - g.top);
+      }
+
+      // ---- MODE: BARS (segmented LED bars; one bar per EQ band) -----------
+      function drawBars(dt, reading) {
         const width = LOGICAL_W;
-        const height = LOGICAL_H;
+        const height = logicalH;
         ctx.clearRect(0, 0, width, height);
 
-        if (!isDeviceOn) {
-          levels.fill(0);
-          peakHolds.fill(0);
-          return;
-        }
-
-        const reading = analyser && isPlaying && freqData;
-        if (reading) analyser.getByteFrequencyData(freqData);
-
-        const paddingX = 12;
-        const availableWidth = width - paddingX * 2;
-        const colWidth = availableWidth / NUM_BARS;
-        const barThickness = Math.floor(colWidth * 0.62);
-        const segGap = 2;
-        const segHeight = Math.floor(
-          (height - SEGMENTS_PER_BAR * segGap - 8) / SEGMENTS_PER_BAR,
+        const g = geom();
+        const { vs, paddingX, colW } = g;
+        const barThickness = g.barW;
+        const segGap = Math.max(1, Math.round(2 * vs));
+        const segHeight = Math.max(
+          2,
+          Math.floor((height - SEGMENTS_PER_BAR * segGap - 8 * vs) / SEGMENTS_PER_BAR),
         );
+
+        if (reading) readBands();
+        drawColumnHover(g);
 
         for (let i = 0; i < NUM_BARS; i++) {
           // Target height: live audio when playing, zero when paused
           let target = 0;
           if (reading) {
-            const rawVal = freqData[binIndices[i]] || 0;
             const boost = 1 + i * 0.12; // lift highs for balance
             target = Math.min(
               SEGMENTS_PER_BAR,
-              (rawVal / 255) * SEGMENTS_PER_BAR * boost,
+              (bandVals[i] / 255) * SEGMENTS_PER_BAR * boost,
             );
           }
 
@@ -1061,7 +1591,7 @@
             peakHolds[i] = Math.max(0, peakHolds[i] - PEAK_FALL_PER_SEC * dt);
           }
 
-          const barX = paddingX + i * colWidth + (colWidth - barThickness) / 2;
+          const barX = paddingX + i * colW + (colW - barThickness) / 2;
           // shadowBlur ignores the canvas transform, so scale it by hand
           const gk =
             canvasK *
@@ -1069,7 +1599,7 @@
             (0.6 + 0.4 * Math.min(1, levels[i] / SEGMENTS_PER_BAR));
 
           for (let seg = 0; seg < SEGMENTS_PER_BAR; seg++) {
-            const segY = height - 4 - seg * (segHeight + segGap);
+            const segY = height - 4 * vs - seg * (segHeight + segGap);
             const isLit = seg <= lit;
             const isPeak =
               peakHolds[i] >= 1 && Math.floor(peakHolds[i]) === seg;
@@ -1110,7 +1640,7 @@
             const dotX = i === 0 ? barX - 5 : barX + barThickness + 4;
             const energetic = Math.max(...levels) > 1;
             for (let d = 0; d < 4; d++) {
-              const dotY = height - 8 - d * 34;
+              const dotY = height - 8 * vs - d * 34 * vs;
               const isRedDot = d === 2 && energetic;
               ctx.fillStyle = isRedDot ? "#ff2a44" : "#1e2c38";
               ctx.shadowColor = isRedDot ? "#ff2a44" : "transparent";
@@ -1121,8 +1651,657 @@
             }
           }
         }
+        ctx.shadowBlur = 0;
+        drawEqOverlay(g);
       }
-      requestAnimationFrame(drawVisualizer);
+
+      // ---- MODE: OSCILLOSCOPE ---------------------------------------------
+      function drawScope(reading) {
+        const W = LOGICAL_W;
+        const H = logicalH;
+        const g = geom();
+        const padX = g.paddingX;
+        const availW = W - padX * 2;
+        const { top, bot } = g;
+        const mid = (top + bot) / 2;
+        const half = (bot - top) / 2;
+        const gk = canvasK * GLOW_STRENGTH;
+
+        // phosphor persistence: fade the previous frame instead of clearing
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = "source-over";
+
+        // graticule
+        ctx.lineWidth = 0.5;
+        ctx.strokeStyle = "rgba(130, 145, 160, 0.1)";
+        ctx.beginPath();
+        for (let i = 0; i <= 8; i++) {
+          const x = padX + (i * availW) / 8;
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, bot);
+        }
+        for (let j = 0; j <= 4; j++) {
+          const y = top + (j * (bot - top)) / 4;
+          ctx.moveTo(padX, y);
+          ctx.lineTo(padX + availW, y);
+        }
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(170, 185, 200, 0.18)";
+        ctx.beginPath();
+        ctx.moveTo(padX, mid);
+        ctx.lineTo(padX + availW, mid);
+        ctx.stroke();
+        // full-scale rails: samples past these are clipping
+        ctx.setLineDash([2, 3]);
+        ctx.strokeStyle = "rgba(255, 42, 42, 0.22)";
+        ctx.beginPath();
+        ctx.moveTo(padX, top);
+        ctx.lineTo(padX + availW, top);
+        ctx.moveTo(padX, bot);
+        ctx.lineTo(padX + availW, bot);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // rising zero-crossing trigger keeps the trace steady
+        let start = 0;
+        if (reading) {
+          for (let i = 1; i < timeData.length - SCOPE_SAMPLES; i++) {
+            if (timeData[i - 1] < 0 && timeData[i] >= 0) {
+              start = i;
+              break;
+            }
+          }
+        }
+        const step = 2;
+        const xs = [];
+        const ys = [];
+        const hot = [];
+        for (let j = 0; j < SCOPE_SAMPLES; j += step) {
+          const s = reading ? timeData[start + j] : 0;
+          xs.push(padX + (j / (SCOPE_SAMPLES - 1)) * availW);
+          ys.push(mid - clamp(s, -1.04, 1.04) * half);
+          hot.push(Math.abs(s) >= CLIP_THRESHOLD);
+        }
+        const trace = new Path2D();
+        const clipped = new Path2D();
+        let anyClip = false;
+        for (let i = 0; i < xs.length; i++) {
+          if (i === 0) trace.moveTo(xs[i], ys[i]);
+          else trace.lineTo(xs[i], ys[i]);
+          if (i > 0 && (hot[i] || hot[i - 1])) {
+            clipped.moveTo(xs[i - 1], ys[i - 1]);
+            clipped.lineTo(xs[i], ys[i]);
+            anyClip = true;
+          }
+        }
+        ctx.lineJoin = "round";
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = "#ffffff";
+        ctx.shadowColor = "rgba(255, 255, 255, 0.9)";
+        ctx.shadowBlur = 12 * gk;
+        ctx.stroke(trace);
+        ctx.shadowBlur = 4 * gk;
+        ctx.stroke(trace);
+        if (anyClip) {
+          ctx.strokeStyle = "#ff2a2a";
+          ctx.shadowColor = "rgba(255, 24, 48, 1)";
+          ctx.shadowBlur = 14 * gk;
+          ctx.stroke(clipped);
+        }
+        ctx.shadowBlur = 0;
+      }
+
+      // ---- MODE: SPECTROGRAM (waterfall; frequency left-right on the same
+      // log axis as the 7 labelled columns, newest row at the top) ---------
+      const sgCanvas = document.createElement("canvas");
+      sgCanvas.width = SG_W;
+      sgCanvas.height = SG_H;
+      const sgCtx = sgCanvas.getContext("2d");
+      const sgBloom = document.createElement("canvas");
+      sgBloom.width = Math.ceil(SG_W / 4);
+      sgBloom.height = Math.ceil(SG_H / 4);
+      const sgBloomCtx = sgBloom.getContext("2d");
+      const sgRow = sgCtx.createImageData(SG_W, 1);
+      let sgAcc = 0;
+
+      // 256-step colour ramp: dark -> white, hottest levels tip into red
+      const sgLUT = (() => {
+        const lut = new Uint8ClampedArray(256 * 4);
+        for (let i = 0; i < 256; i++) {
+          const t = i / 255;
+          const c = Math.pow(t, 1.3);
+          const red = clamp((t - 0.8) / 0.2, 0, 1) * 0.85;
+          lut[i * 4] = 8 + 247 * c;
+          lut[i * 4 + 1] = 11 + 244 * c * (1 - red);
+          lut[i * 4 + 2] = 14 + 241 * c * (1 - red);
+          lut[i * 4 + 3] = 255 * Math.min(1, c * 5);
+        }
+        return lut;
+      })();
+
+      function resetSpectrogram() {
+        sgCtx.clearRect(0, 0, SG_W, SG_H);
+        sgAcc = 0;
+      }
+
+      function pushSpectroRow() {
+        const binHz = audioCtx.sampleRate / analyser.fftSize;
+        const last = freqData.length - 1;
+        const px = sgRow.data;
+        for (let x = 0; x < SG_W; x++) {
+          const pos = ((x + 0.5) / SG_W) * NUM_BARS; // 0..7 in column units
+          const f = BAND_FC[0] * Math.pow(BAND_RATIO, pos - 0.5);
+          const bi = f / binHz;
+          const i0 = Math.floor(bi);
+          let v = 0;
+          if (i0 < last) {
+            const fr = bi - i0;
+            v = freqData[i0] * (1 - fr) + freqData[i0 + 1] * fr;
+          }
+          const boost = 1 + Math.max(0, pos - 0.5) * 0.12;
+          const idx = Math.min(255, Math.round((v / 255) * boost * 255));
+          px[x * 4] = sgLUT[idx * 4];
+          px[x * 4 + 1] = sgLUT[idx * 4 + 1];
+          px[x * 4 + 2] = sgLUT[idx * 4 + 2];
+          px[x * 4 + 3] = sgLUT[idx * 4 + 3];
+        }
+        sgCtx.drawImage(sgCanvas, 0, 1); // scroll history down one row
+        sgCtx.putImageData(sgRow, 0, 0);
+      }
+
+      function drawSpectro(dt, reading) {
+        const W = LOGICAL_W;
+        const H = logicalH;
+        ctx.clearRect(0, 0, W, H);
+        const g = geom();
+        const px = g.paddingX;
+        const pw = g.colW * NUM_BARS;
+        const py = g.top;
+        const ph = g.bot - g.top;
+
+        if (reading) {
+          sgAcc += dt;
+          let rows = 0;
+          while (sgAcc >= 1 / SG_ROWS_PER_SEC && rows < 10) {
+            sgAcc -= 1 / SG_ROWS_PER_SEC;
+            pushSpectroRow();
+            rows++;
+          }
+          if (sgAcc > 0.5) sgAcc = 0;
+        }
+
+        // faint column guides so the 7 EQ bands are readable
+        ctx.lineWidth = 0.5;
+        ctx.strokeStyle = "rgba(130, 145, 160, 0.12)";
+        ctx.beginPath();
+        for (let i = 0; i <= NUM_BARS; i++) {
+          ctx.moveTo(px + i * g.colW, py);
+          ctx.lineTo(px + i * g.colW, py + ph);
+        }
+        ctx.stroke();
+        drawColumnHover(g);
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(sgCanvas, px, py, pw, ph);
+
+        // bloom: downsample + additive upsample = cheap, portable glow
+        if (GLOW_STRENGTH > 0) {
+          sgBloomCtx.clearRect(0, 0, sgBloom.width, sgBloom.height);
+          sgBloomCtx.drawImage(sgCanvas, 0, 0, sgBloom.width, sgBloom.height);
+          ctx.globalCompositeOperation = "lighter";
+          ctx.globalAlpha = Math.min(1, 0.75 * GLOW_STRENGTH);
+          ctx.drawImage(sgBloom, px, py, pw, ph);
+          ctx.globalAlpha = 1;
+          ctx.globalCompositeOperation = "source-over";
+        }
+        drawEqOverlay(g);
+      }
+
+      function setVizMode(mode, announce = true) {
+        if (!VIZ_MODES.includes(mode)) mode = "bars";
+        vizMode = mode;
+        const meta = VIZ_META[mode];
+        ctx.clearRect(0, 0, LOGICAL_W, logicalH);
+        resetSpectrogram();
+        hoverBand = -1;
+        eqDrag = null;
+        vizTitle.textContent = meta.title;
+        vizModeLabel.textContent = meta.label;
+        vizIcon.className = `ph-bold ${meta.icon} text-[8px]`;
+        freqLegend.style.opacity = mode === "scope" ? "0.25" : "1";
+        canvas.style.cursor = mode === "scope" ? "default" : "ns-resize";
+        updateKnobUI();
+        if (announce) flashStatus(`VIZ: ${meta.label}`);
+        scheduleSave();
+      }
+
+      function cycleVizMode() {
+        setVizMode(VIZ_MODES[(VIZ_MODES.indexOf(vizMode) + 1) % VIZ_MODES.length]);
+      }
+
+      // ---- Click / drag a bar (or spectrogram column) to set its EQ gain ---
+      const eqInteractive = () => isDeviceOn && vizMode !== "scope";
+
+      function vizPoint(e) {
+        const r = canvas.getBoundingClientRect();
+        return {
+          x: ((e.clientX - r.left) / r.width) * LOGICAL_W,
+          y: ((e.clientY - r.top) / r.height) * logicalH,
+        };
+      }
+      function bandAtX(x) {
+        const g = geom();
+        const i = Math.floor((x - g.paddingX) / g.colW);
+        return i >= 0 && i < NUM_BARS ? i : -1;
+      }
+      function gainAtY(y) {
+        const g = geom();
+        const mid = (g.top + g.bot) / 2;
+        return clamp(((mid - y) / ((g.bot - g.top) / 2)) * EQ_RANGE, -EQ_RANGE, EQ_RANGE);
+      }
+
+      canvas.addEventListener("pointerdown", (e) => {
+        if (!eqInteractive() || e.button > 0) return;
+        const p = vizPoint(e);
+        const b = bandAtX(p.x);
+        if (b < 0) return;
+        e.preventDefault();
+        canvas.setPointerCapture(e.pointerId);
+        eqDrag = { band: b };
+        eqSel = b;
+        setEqGain(b, gainAtY(p.y));
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!eqInteractive()) return;
+        const p = vizPoint(e);
+        if (eqDrag) setEqGain(eqDrag.band, gainAtY(p.y));
+        else hoverBand = bandAtX(p.x);
+      });
+      const endEqDrag = () => {
+        if (!eqDrag) return;
+        eqDrag = null;
+        saveState();
+      };
+      canvas.addEventListener("pointerup", endEqDrag);
+      canvas.addEventListener("pointercancel", endEqDrag);
+      canvas.addEventListener("pointerleave", () => {
+        if (!eqDrag) hoverBand = -1;
+      });
+      canvas.addEventListener("dblclick", (e) => {
+        if (!eqInteractive()) return;
+        const b = bandAtX(vizPoint(e).x);
+        if (b < 0) return;
+        eqSel = b;
+        setEqGain(b, 0);
+        flashStatus(`EQ ${BAND_LABEL[b]}: FLAT`);
+      });
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          if (!eqInteractive()) return;
+          const b = bandAtX(vizPoint(e).x);
+          if (b < 0) return;
+          e.preventDefault();
+          eqSel = b;
+          setEqGain(b, eqGains[b] + (e.deltaY < 0 ? EQ_STEP : -EQ_STEP));
+        },
+        { passive: false },
+      );
+
+      // =======================================================================
+      // WAVEFORM SCRUBBER
+      // Peaks are decoded once per track, cached in IndexedDB ("peaks" store),
+      // then drawn from cache on every reload.
+      // =======================================================================
+      const wave = {
+        state: "none", // none | loading | ready | failed
+        peaks: null, // { n, data: Uint8Array(2n) } -> n peaks, then n RMS
+        scale: 1,
+        trackId: null,
+        layerKey: "",
+        dim: document.createElement("canvas"),
+        lit: document.createElement("canvas"),
+      };
+      const peakCache = new Map(); // trackId -> peaks | null (decode failed)
+      const peakJobs = new Map(); // trackId -> in-flight promise
+      let waveToken = 0;
+      let scrubbing = false;
+      let scrubFrac = 0;
+      let hoverFrac = null;
+      let lastSeekAt = 0;
+
+      async function computePeaks(url) {
+        // Vercel Blob URLs are CORS-enabled (the visualizer already relies on it)
+        const resp = await fetch(url, { mode: "cors" });
+        if (!resp.ok) throw new Error("fetch failed (" + resp.status + ")");
+        const buf = await resp.arrayBuffer();
+        const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        const oc = new OAC(1, 1, 44100);
+        const audio = await new Promise((resolve, reject) => {
+          const p = oc.decodeAudioData(buf, resolve, reject);
+          if (p && typeof p.catch === "function") p.catch(reject);
+        });
+        const len = audio.length;
+        if (!len) throw new Error("empty audio");
+        const n = PEAK_BUCKETS;
+        const chans = [];
+        for (let c = 0; c < audio.numberOfChannels; c++)
+          chans.push(audio.getChannelData(c));
+        const out = new Uint8Array(n * 2);
+        for (let b = 0; b < n; b++) {
+          const s0 = Math.floor((b * len) / n);
+          const s1 = Math.max(s0 + 1, Math.floor(((b + 1) * len) / n));
+          let pk = 0;
+          let sq = 0;
+          for (const d of chans) {
+            for (let i = s0; i < s1; i++) {
+              const v = d[i];
+              const a = v < 0 ? -v : v;
+              if (a > pk) pk = a;
+              sq += v * v;
+            }
+          }
+          out[b] = Math.min(255, Math.round(pk * 255));
+          out[n + b] = Math.min(
+            255,
+            Math.round(Math.sqrt(sq / ((s1 - s0) * chans.length)) * 255),
+          );
+          if ((b & 31) === 31) await new Promise((r) => setTimeout(r));
+        }
+        return { n, data: out };
+      }
+
+      function ensurePeaks(rec) {
+        if (peakCache.has(rec.id)) return Promise.resolve(peakCache.get(rec.id));
+        if (peakJobs.has(rec.id)) return peakJobs.get(rec.id);
+        const job = (async () => {
+          let p = null;
+          // 1) cached in IndexedDB from a previous visit?
+          try {
+            const c = await dbGetPeaks(rec.id);
+            // size check guards against a blob that was overwritten in place
+            if (c && c.v === PEAKS_VERSION && c.size === rec.size && c.data && c.n)
+              p = { n: c.n, data: c.data };
+          } catch (e) {}
+          // 2) otherwise decode once and cache
+          if (!p) {
+            const tooBig =
+              (rec.duration && rec.duration > MAX_DECODE_SECONDS) ||
+              rec.size > MAX_DECODE_BYTES;
+            if (!tooBig) {
+              try {
+                p = await computePeaks(rec.url);
+                dbPutPeaks({
+                  id: rec.id,
+                  v: PEAKS_VERSION,
+                  size: rec.size,
+                  n: p.n,
+                  data: p.data,
+                }).catch(() => {});
+              } catch (e) {
+                p = null;
+              }
+            }
+          }
+          peakCache.set(rec.id, p);
+          return p;
+        })();
+        peakJobs.set(rec.id, job);
+        job.finally(() => peakJobs.delete(rec.id));
+        return job;
+      }
+
+      function setWavePeaks(p) {
+        wave.peaks = p;
+        wave.state = p ? "ready" : "failed";
+        if (p) {
+          let mx = 0;
+          for (let i = 0; i < p.n; i++) if (p.data[i] > mx) mx = p.data[i];
+          wave.scale = 1 / Math.max(0.25, mx / 255); // lift quiet tracks, never over 4x
+        }
+        wave.layerKey = "";
+      }
+
+      function loadWave(t) {
+        const tok = ++waveToken;
+        wave.trackId = t ? t.id : null;
+        wave.layerKey = "";
+        if (!t) {
+          wave.state = "none";
+          wave.peaks = null;
+          return;
+        }
+        if (peakCache.has(t.id)) return setWavePeaks(peakCache.get(t.id));
+        wave.state = "loading";
+        wave.peaks = null;
+        ensurePeaks(t).then((p) => {
+          if (tok === waveToken) setWavePeaks(p);
+        });
+      }
+
+      // Pre-render the static waveform (dim + glowing "played" copy) once
+      function renderWaveLayers() {
+        const w = waveW;
+        const h = waveH;
+        const k = canvasK;
+        if (!w || !h || !wave.peaks) return;
+        const key = `${wave.trackId}|${w}|${h}|${k}`;
+        if (key === wave.layerKey) return;
+        wave.layerKey = key;
+        for (const L of [wave.dim, wave.lit]) {
+          L.width = Math.max(1, Math.round(w * k));
+          L.height = Math.max(1, Math.round(h * k));
+        }
+        const d = wave.dim.getContext("2d");
+        const l = wave.lit.getContext("2d");
+        d.setTransform(k, 0, 0, k, 0, 0);
+        l.setTransform(k, 0, 0, k, 0, 0);
+
+        const { n, data } = wave.peaks;
+        const step = 3;
+        const bw = 2;
+        const cols = Math.max(1, Math.floor((w + step - bw) / step));
+        const off = (w - (cols * step - (step - bw))) / 2;
+        const mid = h / 2;
+        const amp = h / 2 - 1.5;
+        for (let c = 0; c < cols; c++) {
+          const b0 = Math.floor((c * n) / cols);
+          const b1 = Math.max(b0 + 1, Math.floor(((c + 1) * n) / cols));
+          let pk = 0;
+          let rs = 0;
+          for (let b = b0; b < b1; b++) {
+            if (data[b] > pk) pk = data[b];
+            rs += data[n + b];
+          }
+          rs /= b1 - b0;
+          const clip = pk >= CLIP_Q; // the file itself hits full scale here
+          const ph = Math.max(0.6, (pk / 255) * wave.scale * amp);
+          const rh = Math.max(0.5, Math.min(ph, (rs / 255) * wave.scale * amp));
+          const x = off + c * step;
+
+          d.fillStyle = clip ? "rgba(255, 60, 60, 0.45)" : "rgba(150, 162, 175, 0.38)";
+          d.fillRect(x, mid - ph, bw, ph * 2);
+          d.fillStyle = clip ? "rgba(255, 60, 60, 0.75)" : "rgba(170, 182, 195, 0.65)";
+          d.fillRect(x, mid - rh, bw, rh * 2);
+
+          l.shadowColor = clip ? "rgba(255, 40, 40, 0.9)" : "rgba(255, 255, 255, 0.8)";
+          l.shadowBlur = 5 * k;
+          l.fillStyle = clip ? "rgba(255, 70, 70, 0.55)" : "rgba(255, 255, 255, 0.45)";
+          l.fillRect(x, mid - ph, bw, ph * 2);
+          l.fillStyle = clip ? "#ff4040" : "#ffffff";
+          l.fillRect(x, mid - rh, bw, rh * 2);
+        }
+      }
+
+      function drawBaseline(w, h, dashed = true) {
+        wctx.save();
+        wctx.strokeStyle = "rgba(150, 162, 175, 0.3)";
+        wctx.lineWidth = 1;
+        if (dashed) wctx.setLineDash([2, 3]);
+        wctx.beginPath();
+        wctx.moveTo(4, h / 2);
+        wctx.lineTo(w - 4, h / 2);
+        wctx.stroke();
+        wctx.restore();
+      }
+
+      function waveLabel(txt, w, h) {
+        wctx.save();
+        wctx.font = '6px "Share Tech Mono", ui-monospace, monospace';
+        wctx.textAlign = "center";
+        wctx.textBaseline = "middle";
+        wctx.fillStyle = "rgba(160, 172, 185, 0.5)";
+        wctx.fillText(txt, w / 2, h / 2 - 5);
+        wctx.restore();
+      }
+
+      function drawWave(now) {
+        const w = waveW;
+        const h = waveH;
+        if (!w || !h) return;
+        const k = canvasK;
+        wctx.clearRect(0, 0, w, h);
+
+        const t = tracks[currentIndex];
+        if (!t) {
+          drawBaseline(w, h);
+          waveLabel("NO SIGNAL", w, h);
+          return;
+        }
+        const ad = audioElement.duration;
+        const dur = ad > 0 && isFinite(ad) ? ad : t.duration || 0;
+        const cur = scrubbing
+          ? scrubFrac * dur
+          : pendingSeek != null
+            ? pendingSeek
+            : audioElement.currentTime;
+        const frac = dur > 0 ? clamp(cur / dur, 0, 1) : 0;
+        const px = frac * w;
+
+        if (wave.state === "ready" && wave.peaks) {
+          renderWaveLayers();
+          wctx.drawImage(wave.dim, 0, 0, w, h);
+          if (px > 0.5)
+            wctx.drawImage(
+              wave.lit,
+              0,
+              0,
+              Math.max(1, Math.min(wave.lit.width, px * k)),
+              wave.lit.height,
+              0,
+              0,
+              px,
+              h,
+            );
+        } else if (wave.state === "loading") {
+          drawBaseline(w, h);
+          const sx = ((now / 900) % 1) * (w + 60) - 30;
+          const grad = wctx.createLinearGradient(sx - 30, 0, sx, 0);
+          grad.addColorStop(0, "rgba(255, 255, 255, 0)");
+          grad.addColorStop(1, "rgba(255, 255, 255, 0.7)");
+          wctx.fillStyle = grad;
+          wctx.fillRect(sx - 30, h / 2 - 1, 30, 2);
+          waveLabel("DECODING WAVEFORM", w, h);
+        } else {
+          // no waveform available (undecodable or very long): plain line
+          drawBaseline(w, h, false);
+          wctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+          wctx.fillRect(0, h / 2 - 0.5, px, 1);
+        }
+
+        if (hoverFrac != null && !scrubbing) {
+          wctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+          wctx.fillRect(hoverFrac * w - 0.5, 0, 1, h);
+        }
+        if (dur > 0) {
+          wctx.save();
+          wctx.shadowColor = "rgba(255, 255, 255, 0.95)";
+          wctx.shadowBlur = 6 * k;
+          wctx.fillStyle = "#ffffff";
+          wctx.fillRect(clamp(px, 0.5, w - 0.5) - 0.5, 0, 1, h);
+          wctx.restore();
+        }
+      }
+
+      // ---- Click / drag to seek ------------------------------------------
+      function waveFrac(e) {
+        const r = waveCanvas.getBoundingClientRect();
+        return clamp((e.clientX - r.left) / r.width, 0, 1);
+      }
+      function seekToFraction(f, force = false) {
+        const d = audioElement.duration;
+        if (!(d > 0) || !isFinite(d)) return;
+        const now = performance.now();
+        if (!force && now - lastSeekAt < 50) return; // throttle live scrubbing
+        lastSeekAt = now;
+        audioElement.currentTime = f * d;
+        timeCurrent.textContent = formatTime(f * d);
+      }
+      timelineContainer.addEventListener("pointerdown", (e) => {
+        if (!hasTrack() || e.button > 0) return;
+        e.preventDefault();
+        timelineContainer.setPointerCapture(e.pointerId);
+        playTactileFeedback("click");
+        scrubbing = true;
+        scrubFrac = waveFrac(e);
+        seekToFraction(scrubFrac, true);
+      });
+      timelineContainer.addEventListener("pointermove", (e) => {
+        hoverFrac = waveFrac(e);
+        if (!scrubbing) return;
+        scrubFrac = hoverFrac;
+        seekToFraction(scrubFrac);
+      });
+      const endScrub = () => {
+        if (!scrubbing) return;
+        seekToFraction(scrubFrac, true);
+        scrubbing = false;
+        saveState();
+      };
+      timelineContainer.addEventListener("pointerup", endScrub);
+      timelineContainer.addEventListener("pointercancel", endScrub);
+      timelineContainer.addEventListener("pointerleave", () => {
+        if (!scrubbing) hoverFrac = null;
+      });
+
+      // =======================================================================
+      // MAIN FRAME LOOP
+      // =======================================================================
+      function frame(now) {
+        requestAnimationFrame(frame);
+
+        const dt = Math.min(0.1, (now - lastFrame) / 1000 || 0.016);
+        lastFrame = now;
+
+        drawWave(now);
+
+        if (!isDeviceOn) {
+          ctx.clearRect(0, 0, LOGICAL_W, logicalH);
+          levels.fill(0);
+          peakHolds.fill(0);
+          clipUntil = 0;
+          setLamp(false);
+          return;
+        }
+
+        const reading = !!(analyser && isPlaying && freqData);
+        if (reading) {
+          analyser.getByteFrequencyData(freqData);
+          analyser.getFloatTimeDomainData(timeData);
+        }
+        updateMeter(now, reading);
+
+        if (vizMode === "bars") drawBars(dt, reading);
+        else if (vizMode === "scope") drawScope(reading);
+        else drawSpectro(dt, reading);
+
+        updateDiag(now);
+      }
+      requestAnimationFrame(frame);
 
       // =======================================================================
       // LIBRARY / TRACKLIST UI
@@ -1223,13 +2402,21 @@
       // =======================================================================
       // TRACK LOADING / PLAYBACK
       // =======================================================================
+      let delArmedUntil = 0;
+      let delTimer = null;
+      function disarmDel() {
+        clearTimeout(delTimer);
+        delArmedUntil = 0;
+        hotspotDel.classList.remove("hotspot-armed");
+      }
+
       function resetDisplay() {
         trackNameEl.textContent = "NO TRACK LOADED";
         artistNameEl.textContent = "INSERT MEDIA // LOAD FILE";
         codecLabel.textContent = "--";
         timeCurrent.textContent = "00:00";
         timeDuration.textContent = "00:00";
-        playbackBar.style.width = "0%";
+        loadWave(null);
       }
 
       function selectTrack(index, { play = false, time = 0 } = {}) {
@@ -1237,6 +2424,7 @@
           clearCurrent();
           return;
         }
+        disarmDel();
         currentIndex = index;
         const t = tracks[index];
 
@@ -1246,14 +2434,16 @@
         audioElement.loop = isLooping;
 
         pendingSeek = time > 0 ? time : null;
+        peakMax = 0;
+        clipCount = 0;
+        clipUntil = 0;
 
         trackNameEl.textContent = t.name.toUpperCase();
         artistNameEl.textContent = `MOUNTED // ${formatSize(t.size)}`;
         codecLabel.textContent = extOf(t.name);
         timeCurrent.textContent = formatTime(time);
         timeDuration.textContent = formatTime(t.duration);
-        playbackBar.style.width =
-          t.duration && time ? `${(time / t.duration) * 100}%` : "0%";
+        loadWave(t);
 
         updatePlayStateUI(false);
         updateCounters();
@@ -1308,13 +2498,15 @@
 
       async function removeTrack(index) {
         const t = tracks[index];
-        if (!t) return;
+        if (!t) return false;
         try {
           await blobDelete([t.url]);
         } catch (e) {
           flashStatus("ERR: DELETE FAILED", 2500);
-          return;
+          return false;
         }
+        dbDeletePeaks(t.id).catch(() => {});
+        peakCache.delete(t.id);
         const wasCurrent = index === currentIndex;
         const wasPlaying = !audioElement.paused;
         tracks.splice(index, 1);
@@ -1330,6 +2522,7 @@
         updateCounters();
         renderTracklist();
         saveState();
+        return true;
       }
 
       async function clearAll() {
@@ -1339,6 +2532,8 @@
           flashStatus("ERR: DELETE FAILED", 2500);
           return;
         }
+        dbClearPeaks().catch(() => {});
+        peakCache.clear();
         tracks = [];
         clearCurrent();
       }
@@ -1470,14 +2665,12 @@
           audioElement.currentTime = target;
           pendingSeek = null;
           timeCurrent.textContent = formatTime(target);
-          if (d) playbackBar.style.width = `${(target / d) * 100}%`;
         }
       });
 
       audioElement.addEventListener("timeupdate", () => {
         const d = audioElement.duration;
-        if (!d || !isFinite(d) || pendingSeek != null) return;
-        playbackBar.style.width = `${(audioElement.currentTime / d) * 100}%`;
+        if (!d || !isFinite(d) || pendingSeek != null || scrubbing) return;
         timeCurrent.textContent = formatTime(audioElement.currentTime);
         if (Date.now() - lastSave > 1000) {
           lastSave = Date.now();
@@ -1493,7 +2686,6 @@
           audioElement.play().catch(() => {});
         } else {
           audioElement.currentTime = 0;
-          playbackBar.style.width = "0%";
           timeCurrent.textContent = "00:00";
         }
       });
@@ -1511,22 +2703,6 @@
         if (currentIndex < 0) return selectTrack(0, { play: true });
         if (audioElement.paused) audioElement.play().catch(() => {});
         else audioElement.pause();
-      });
-
-      // Scrubbing
-      timelineContainer.addEventListener("click", (e) => {
-        playTactileFeedback("click");
-        const d = audioElement.duration;
-        if (!d || !isFinite(d)) return;
-        const rect = timelineContainer.getBoundingClientRect();
-        const fraction = Math.max(
-          0,
-          Math.min(1, (e.clientX - rect.left) / rect.width),
-        );
-        audioElement.currentTime = fraction * d;
-        playbackBar.style.width = `${fraction * 100}%`;
-        timeCurrent.textContent = formatTime(audioElement.currentTime);
-        saveState();
       });
 
       // File upload (multiple files supported)
@@ -1594,17 +2770,18 @@
         if (e.key === "Escape") closeModals();
       });
 
-      // Volume
-      function applyVolume() {
-        const val = parseFloat(volSlider.value);
-        volReadout.textContent = `${Math.round(val * 100)}%`;
-        audioElement.volume = val;
-        if (masterGain) masterGain.gain.setValueAtTime(val, audioCtx.currentTime);
-      }
+      // Volume slider (the knob's VOLUME mode drives the same control)
       volSlider.addEventListener("input", () => {
         initAudioGraph();
         applyVolume();
+        updateKnobUI();
         saveState();
+      });
+
+      // Visualizer mode button
+      btnVizMode.addEventListener("click", () => {
+        playTactileFeedback("click");
+        cycleVizMode();
       });
 
       // Power switch (CRT flicker)
@@ -1614,7 +2791,10 @@
         if (isDeviceOn) {
           screenContainer.classList.remove("crt-off");
           screenContainer.classList.add("crt-turn-on");
-          setTimeout(() => screenContainer.classList.remove("crt-turn-on"), 400);
+          setTimeout(
+            () => screenContainer.classList.remove("crt-turn-on"),
+            400,
+          );
           if (resumeAfterPowerOn && audioElement.getAttribute("src")) {
             audioElement.play().catch(() => {});
           }
@@ -1630,108 +2810,179 @@
         saveState();
       });
 
-      // SYS: diagnostics
-      hotspotSys.addEventListener("click", () => {
-        playTactileFeedback("beep");
-        const opening = sysDiagModal.classList.contains("hidden");
-        closeModals();
-        if (opening) sysDiagModal.classList.remove("hidden");
-      });
+      // -----------------------------------------------------------------------
+      // Hardware buttons. A tap does the button's own job; holding SYS / INS
+      // for HOLD_MS steps the knob mode back / forward.
+      // -----------------------------------------------------------------------
+      function bindTapHold(el, onTap, onHold) {
+        let timer = null;
+        let held = false;
+        const cancel = () => {
+          clearTimeout(timer);
+          timer = null;
+        };
+        el.addEventListener("pointerdown", (e) => {
+          if (e.button > 0) return;
+          held = false;
+          cancel();
+          timer = setTimeout(() => {
+            timer = null;
+            held = true;
+            onHold();
+          }, HOLD_MS);
+        });
+        el.addEventListener("pointerup", cancel);
+        el.addEventListener("pointerleave", cancel);
+        el.addEventListener("pointercancel", cancel);
+        el.addEventListener("contextmenu", (e) => e.preventDefault());
+        el.addEventListener("click", (e) => {
+          if (held) {
+            held = false;
+            e.preventDefault();
+            return; // the long press already did its job
+          }
+          onTap(e);
+        });
+      }
+
+      // SYS: diagnostics (hold: previous knob mode)
+      bindTapHold(
+        hotspotSys,
+        () => {
+          playTactileFeedback("beep");
+          const opening = sysDiagModal.classList.contains("hidden");
+          closeModals();
+          if (opening) sysDiagModal.classList.remove("hidden");
+        },
+        () => {
+          playTactileFeedback("beep");
+          cycleKnobMode(-1);
+        },
+      );
       closeDiag.addEventListener("click", () => {
         playTactileFeedback("click");
         closeModals();
       });
 
-      // DEL: restart track + reset filter knob
-      hotspotDel.addEventListener("click", () => {
+      // INS: open the file picker (hold: next knob mode)
+      bindTapHold(
+        hotspotIns,
+        () => {
+          playTactileFeedback("beep");
+          audioFileInput.click();
+        },
+        () => {
+          playTactileFeedback("beep");
+          cycleKnobMode(1);
+        },
+      );
+
+      // DEL: remove the current track (press twice to confirm)
+      hotspotDel.addEventListener("click", async () => {
+        if (!hasTrack()) {
+          playTactileFeedback("click");
+          return flashStatus("STATUS: NO MEDIA");
+        }
+        const now = performance.now();
+        if (DEL_NEEDS_CONFIRM && now > delArmedUntil) {
+          playTactileFeedback("beep");
+          delArmedUntil = now + DEL_CONFIRM_MS;
+          hotspotDel.classList.add("hotspot-armed");
+          flashStatus("DEL? PRESS AGAIN", DEL_CONFIRM_MS);
+          clearTimeout(delTimer);
+          delTimer = setTimeout(disarmDel, DEL_CONFIRM_MS);
+          return;
+        }
+        disarmDel();
         playTactileFeedback("del");
-        if (audioElement.getAttribute("src")) {
-          audioElement.currentTime = 0;
-          playbackBar.style.width = "0%";
-          timeCurrent.textContent = "00:00";
-        }
-        knobAngle = KNOB_OPEN;
-        applyKnob();
-        flashStatus("SYS: FLUSHED");
-        saveState();
+        if (await removeTrack(currentIndex)) flashStatus("STATUS: TRACK DELETED");
       });
 
-      // INS: synthesized telemetry chirp
-      hotspotIns.addEventListener("click", () => {
-        playTactileFeedback("beep");
-        initAudioGraph();
-        if (!audioCtx) return;
-        const now = audioCtx.currentTime;
-        [587, 880, 1174, 1760].forEach((freq, idx) => {
-          const osc = audioCtx.createOscillator();
-          const g = audioCtx.createGain();
-          osc.frequency.setValueAtTime(freq, now + idx * 0.05);
-          g.gain.setValueAtTime(0.06, now + idx * 0.05);
-          g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.07);
-          osc.connect(g);
-          g.connect(masterGain || audioCtx.destination);
-          osc.start(now + idx * 0.05);
-          osc.stop(now + idx * 0.05 + 0.08);
-        });
-        flashStatus("SIGNAL: INJECTED");
-      });
-
-      // Rotary knob: low-pass filter cutoff (click or drag)
-      function applyKnob() {
-        knobDot.style.transform = `rotate(${knobAngle}deg) translateY(-14px)`;
-        if (biquadFilter) {
-          biquadFilter.frequency.setValueAtTime(
-            knobCutoff(),
-            audioCtx.currentTime,
-          );
-        }
-      }
-      function rotateKnobBy(delta) {
-        knobAngle = (knobAngle + delta + 360) % 360;
-        applyKnob();
-        saveState();
-      }
-
-      hotspotKnob.addEventListener("click", () => {
+      // Knob-mode tabs on the screen (tap a tab, or the label to step forward)
+      knobPanel.addEventListener("click", (e) => {
         playTactileFeedback("click");
-        rotateKnobBy(45);
+        const tab = e.target.closest(".knob-tab");
+        if (tab) setKnobMode(tab.dataset.mode);
+        else cycleKnobMode(1);
       });
 
-      let isDraggingKnob = false;
-      let startY = 0;
-      hotspotKnob.addEventListener("mousedown", (e) => {
-        isDraggingKnob = true;
-        startY = e.clientY;
+      // -----------------------------------------------------------------------
+      // Rotary knob: drag up/down or scroll to change the active parameter.
+      // In EQ mode a plain tap steps to the next band.
+      // -----------------------------------------------------------------------
+      let knobDrag = null;
+      hotspotKnob.addEventListener("pointerdown", (e) => {
+        if (e.button > 0) return;
+        e.preventDefault();
+        hotspotKnob.setPointerCapture(e.pointerId);
+        knobDrag = { y: e.clientY, startN: getKnobN(), moved: false };
       });
-      window.addEventListener("mousemove", (e) => {
-        if (!isDraggingKnob) return;
-        const deltaY = startY - e.clientY;
-        if (Math.abs(deltaY) > 4) {
-          rotateKnobBy(deltaY > 0 ? 12 : -12);
-          startY = e.clientY;
+      hotspotKnob.addEventListener("pointermove", (e) => {
+        if (!knobDrag) return;
+        const dy = knobDrag.y - e.clientY;
+        if (Math.abs(dy) > 3) knobDrag.moved = true;
+        if (!knobDrag.moved) return;
+        const sens = e.shiftKey ? KNOB_DRAG_PER_PX / 4 : KNOB_DRAG_PER_PX;
+        setKnobN(knobDrag.startN + dy * sens);
+      });
+      const endKnobDrag = () => {
+        if (!knobDrag) return;
+        const wasTap = !knobDrag.moved;
+        knobDrag = null;
+        playTactileFeedback("click");
+        if (wasTap && knobMode === "eq") {
+          eqSel = (eqSel + 1) % NUM_BARS;
+          updateKnobUI();
+          flashStatus(`EQ BAND: ${BAND_LABEL[eqSel]}`);
         }
+        saveState();
+      };
+      hotspotKnob.addEventListener("pointerup", endKnobDrag);
+      hotspotKnob.addEventListener("pointercancel", () => {
+        knobDrag = null;
       });
-      window.addEventListener("mouseup", () => (isDraggingKnob = false));
-
-      hotspotKnob.addEventListener("touchstart", (e) => {
-        isDraggingKnob = true;
-        startY = e.touches[0].clientY;
-      });
-      window.addEventListener("touchmove", (e) => {
-        if (!isDraggingKnob) return;
-        const deltaY = startY - e.touches[0].clientY;
-        if (Math.abs(deltaY) > 4) {
-          rotateKnobBy(deltaY > 0 ? 15 : -15);
-          startY = e.touches[0].clientY;
-        }
-      });
-      window.addEventListener("touchend", () => (isDraggingKnob = false));
+      hotspotKnob.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          const dir = e.deltaY < 0 ? 1 : -1;
+          if (knobMode === "eq") {
+            setEqGain(eqSel, eqGains[eqSel] + dir * EQ_STEP * (e.shiftKey ? 1 : 2));
+          } else {
+            setKnobN(getKnobN() + dir * (e.shiftKey ? 0.005 : 0.02));
+          }
+        },
+        { passive: false },
+      );
 
       // Save position when the tab is hidden or closed
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) saveState();
       });
       window.addEventListener("pagehide", saveState);
+
+      // Keep canvases sharp and un-stretched when layout / scale changes
+      window.addEventListener("resize", applyScale);
+      window.addEventListener("load", applyScale);
+      let lastCW = 0;
+      let lastCH = 0;
+      if (window.ResizeObserver) {
+        const ro = new ResizeObserver(() => {
+          if (
+            canvas.clientWidth !== lastCW ||
+            canvas.clientHeight !== lastCH ||
+            waveCanvas.clientWidth !== waveW ||
+            waveCanvas.clientHeight !== waveH
+          ) {
+            lastCW = canvas.clientWidth;
+            lastCH = canvas.clientHeight;
+            sizeCanvases();
+          }
+        });
+        ro.observe(canvas);
+        ro.observe(waveCanvas);
+      }
+      applyScale();
 
       // =======================================================================
       // BOOT: restore saved session (library + settings), start empty otherwise
@@ -1743,10 +2994,25 @@
           isLooping = !!st.loop;
           isDeviceOn = st.deviceOn !== false;
           if (typeof st.volume === "number") volSlider.value = st.volume;
-          if (typeof st.knobAngle === "number") knobAngle = st.knobAngle;
+          if (typeof st.filterN === "number") filterN = clamp(st.filterN, 0, 1);
+          if (typeof st.speedN === "number") speedN = clamp(st.speedN, 0, 1);
+          if (Array.isArray(st.eq))
+            for (let i = 0; i < NUM_BARS; i++)
+              if (typeof st.eq[i] === "number")
+                eqGains[i] = clamp(st.eq[i], -EQ_RANGE, EQ_RANGE);
+          if (Number.isInteger(st.eqSel) && st.eqSel >= 0 && st.eqSel < NUM_BARS)
+            eqSel = st.eqSel;
+          if (KNOB_MODES.includes(st.knobMode)) knobMode = st.knobMode;
+          if (VIZ_MODES.includes(st.viz)) vizMode = st.viz;
         }
+        audioElement.preservesPitch = PRESERVE_PITCH;
+        audioElement.mozPreservesPitch = PRESERVE_PITCH;
+        audioElement.webkitPreservesPitch = PRESERVE_PITCH;
         applyVolume();
-        applyKnob();
+        applySpeed();
+        applyFilter();
+        setVizMode(vizMode, false);
+        updateKnobUI();
         audioElement.loop = isLooping;
         btnShuffle.classList.toggle("active-state", isShuffle);
         btnLoop.classList.toggle("active-state", isLooping);
@@ -1765,7 +3031,6 @@
           });
         }
         updatePlayStateUI(false);
-
       })();
     </script>
   </body>
