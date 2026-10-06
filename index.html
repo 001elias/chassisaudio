@@ -761,7 +761,7 @@
       };
       const FILTER_MIN = 200; // Hz, knob fully counter-clockwise
       const FILTER_MAX = 22000; // Hz, knob fully clockwise (= open)
-      const PRESERVE_PITCH = true; // speed changes keep the original pitch
+      const PRESERVE_PITCH = false; // false = pitch follows speed (clean resample, no time-stretch artifacts)
       const KNOB_DRAG_PER_PX = 0.006; // knob travel per dragged pixel
 
       // Buttons
@@ -1320,7 +1320,13 @@
           case "filter":
             return filterN >= 0.995 ? "OPEN" : `LP ${fmtHz(filterHz(filterN))}`;
           case "speed":
-            return `${speedFromN(speedN).toFixed(2)}x`;
+            {
+              const r = speedFromN(speedN);
+              const st = 12 * Math.log2(r);
+              return Math.abs(st) < 0.05
+                ? "1.00x"
+                : `${r.toFixed(2)}x ${st > 0 ? "+" : ""}${st.toFixed(1)}st`;
+            }
           case "volume":
             return `${Math.round(getKnobN() * 100)}%`;
           default:
