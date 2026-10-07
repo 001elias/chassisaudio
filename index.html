@@ -737,7 +737,11 @@
       const REF_H = 150; // height the original bar geometry was tuned for
       const NUM_BARS = 7;
       const SEGMENTS_PER_BAR = 16;
-      const GLOW_STRENGTH = 1; // glow: 0 = off, 1 = default, 2 = intense
+      const GLOW_BASE = 1; // glow: 0 = off, 1 = default, 2 = intense
+      let GLOW_STRENGTH = GLOW_BASE; // the performance governor can dial this down on slow devices
+      const MAX_CANVAS_K = 2; // visualizer pixel density cap (phones are 3x; blur cost grows with pixels)
+      const SPEED_COMMIT_MS = 100; // max rate of playbackRate writes while the speed knob moves
+      const PERF_SLOW_MS = 40; // average frame time above this (< 25 fps) triggers a lighter mode
 
       // Signal path
       const DRIVE_GAIN = 1.35; // set to 1 if PEAK LIM should reflect the raw mix
@@ -867,7 +871,16 @@
       // Visualizer
       let vizMode = "bars"; // "bars" | "scope" | "spectro"
       let logicalH = REF_H;
-      let canvasK = 1; // canvas pixels per logical pixel (set in applyScale)
+      let canvasK = 1; // visualizer canvas pixels per logical pixel (set in applyScale)
+      let waveK = 1; // waveform canvas pixels per logical pixel (kept sharp, it is cheap)
+      let perfTier = 0; // 0 = full, 1 = visualizer at 30 fps, 2 = also lower density + glow
+      let vizEvery = 1;
+      let vizFrame = 0;
+      let vizAcc = 0;
+      let perfAcc = 0;
+      let perfN = 0;
+      let perfWarm = 2; // ignore the first windows (page is still loading)
+      let fpsAvg = 60; // smoothed frames per second, shown in SYS diagnostics
       let hoverBand = -1;
       let eqDrag = null; // { band } while a bar is being dragged
 
@@ -1533,11 +1546,29 @@
         biquadFilter.frequency.setTargetAtTime(hz, audioCtx.currentTime, 0.015);
       }
 
-      function applySpeed() {
-        const r = speedFromN(speedN);
+      // Phones' media pipelines struggle when playbackRate is rewritten on every touch
+      // move (60-120x per second). The knob + readout still follow your finger instantly;
+      // the audio rate is committed at most every SPEED_COMMIT_MS, plus once on release.
+      let speedTimer = null;
+      let speedLast = 0;
+      let speedApplied = NaN;
+      function commitSpeed() {
+        speedTimer = null;
+        const r = Math.round(speedFromN(speedN) * 100) / 100;
+        if (r === speedApplied) return;
+        speedApplied = r;
+        speedLast = performance.now();
         // defaultPlaybackRate survives the src change when a new track loads
         audioElement.defaultPlaybackRate = r;
         audioElement.playbackRate = r;
+      }
+      function applySpeed(immediate = false) {
+        if (immediate) {
+          clearTimeout(speedTimer);
+          return commitSpeed();
+        }
+        if (speedTimer) return; // a commit is already queued and will read the latest value
+        speedTimer = setTimeout(commitSpeed, Math.max(0, SPEED_COMMIT_MS - (performance.now() - speedLast)));
       }
 
       function applyVolume() {
@@ -1553,7 +1584,7 @@
         eqGains[i] = g;
         if (eqNodes)
           eqNodes[i].gain.setTargetAtTime(g, audioCtx.currentTime, 0.02);
-        updateKnobUI();
+        queueKnobUI();
         scheduleSave();
       }
 
@@ -1593,7 +1624,7 @@
           setEqGain(eqSel, (n * 2 - 1) * EQ_RANGE);
           return;
         }
-        updateKnobUI();
+        queueKnobUI();
         scheduleSave();
       }
 
@@ -1620,6 +1651,9 @@
         }
       }
 
+      const diagModesText = () =>
+        `${KNOB_NAMES[knobMode]} / ${vizMode.toUpperCase()}${perfTier ? " / PERF" + perfTier : ""} / ${Math.round(fpsAvg)}FPS`;
+
       function updateKnobUI() {
         // 270 degree sweep: -135 (min) .. +135 (max), 12 o'clock = centre
         knobDot.style.transform = `rotate(${-135 + getKnobN() * 270}deg) translateY(-14px)`;
@@ -1628,7 +1662,17 @@
         knobTabs.forEach((t) =>
           t.classList.toggle("on", t.dataset.mode === knobMode),
         );
-        diagModes.textContent = `${KNOB_NAMES[knobMode]} / ${vizMode.toUpperCase()}`;
+        diagModes.textContent = diagModesText();
+      }
+
+      let knobUIQueued = false;
+      function queueKnobUI() {
+        if (knobUIQueued) return;
+        knobUIQueued = true;
+        requestAnimationFrame(() => {
+          knobUIQueued = false;
+          updateKnobUI();
+        });
       }
 
       function setKnobMode(mode, announce = true) {
@@ -1667,9 +1711,9 @@
           waveH = waveCanvas.clientHeight;
         }
         if (waveW && waveH) {
-          waveCanvas.width = Math.round(waveW * k);
-          waveCanvas.height = Math.round(waveH * k);
-          wctx.setTransform(k, 0, 0, k, 0, 0);
+          waveCanvas.width = Math.round(waveW * waveK);
+          waveCanvas.height = Math.round(waveH * waveK);
+          wctx.setTransform(waveK, 0, 0, waveK, 0, 0);
         }
         wave.layerKey = "";
       }
@@ -1681,7 +1725,9 @@
           MAX_SCALE,
         );
         rigRoot.style.transform = `scale(${s})`;
-        canvasK = Math.max(1, s * (window.devicePixelRatio || 1));
+        const px = s * (window.devicePixelRatio || 1);
+        canvasK = Math.min(perfTier >= 2 ? 1.25 : MAX_CANVAS_K, Math.max(1, px));
+        waveK = Math.min(3, Math.max(1, px));
         sizeCanvases();
       }
 
@@ -1715,6 +1761,7 @@
         if (now - lastDiag < 250 || sysDiagModal.classList.contains("hidden"))
           return;
         lastDiag = now;
+        diagModes.textContent = diagModesText();
         diagPeak.textContent =
           peakMax > 0 ? `${(20 * Math.log10(peakMax)).toFixed(1)} dBFS` : "-- dBFS";
         diagClips.textContent = String(clipCount);
@@ -2137,7 +2184,7 @@
         drawColumnHover(g);
 
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
+        ctx.imageSmoothingQuality = "low";
         ctx.drawImage(sgCanvas, px, py, pw, ph);
 
         // bloom: downsample + additive upsample = cheap, portable glow
@@ -2379,7 +2426,7 @@
       function renderWaveLayers() {
         const w = waveW;
         const h = waveH;
-        const k = canvasK;
+        const k = waveK;
         if (!w || !h || !wave.peaks) return;
         const key = `${wave.trackId}|${w}|${h}|${k}`;
         if (key === wave.layerKey) return;
@@ -2455,7 +2502,7 @@
         const w = waveW;
         const h = waveH;
         if (!w || !h) return;
-        const k = canvasK;
+        const k = waveK;
         wctx.clearRect(0, 0, w, h);
 
         const t = tracks[currentIndex];
@@ -2566,8 +2613,32 @@
       function frame(now) {
         requestAnimationFrame(frame);
 
-        const dt = Math.min(0.1, (now - lastFrame) / 1000 || 0.016);
+        const rawMs = now - lastFrame;
+        const dt = Math.min(0.1, rawMs / 1000 || 0.016);
         lastFrame = now;
+
+        // Frame-rate governor (safety net for slow phones): if frames keep taking too long,
+        // first halve the visualizer rate, then lower pixel density and glow. Only steps down.
+        if (rawMs > 0 && rawMs < 250) {
+          perfAcc += rawMs;
+          perfN++;
+          fpsAvg += (1000 / rawMs - fpsAvg) * 0.05;
+        }
+        if (perfN >= 60) {
+          const avg = perfAcc / perfN;
+          perfAcc = 0;
+          perfN = 0;
+          if (perfWarm > 0) perfWarm--;
+          else if (isPlaying && !document.hidden && avg > PERF_SLOW_MS && perfTier < 2) {
+            perfTier++;
+            vizEvery = perfTier >= 1 ? 2 : 1;
+            GLOW_STRENGTH = perfTier >= 2 ? GLOW_BASE * 0.5 : GLOW_BASE;
+            perfWarm = 2;
+            if (perfTier >= 2) applyScale(); // lower canvas density
+            updateKnobUI();
+            flashStatus(perfTier === 1 ? "PERF: 30 FPS VIZ" : "PERF: LITE VIZ", 1800);
+          }
+        }
 
         drawWave(now);
 
@@ -2585,11 +2656,18 @@
           analyser.getByteFrequencyData(freqData);
           analyser.getFloatTimeDomainData(timeData);
         }
-        updateMeter(now, reading);
+        updateMeter(now, reading); // clip detection stays at full frame rate
 
-        if (vizMode === "bars") drawBars(dt, reading);
+        vizAcc += dt;
+        if (vizEvery > 1 && ++vizFrame % vizEvery !== 0) {
+          updateDiag(now);
+          return;
+        }
+        const vdt = Math.min(0.1, vizAcc);
+        vizAcc = 0;
+        if (vizMode === "bars") drawBars(vdt, reading);
         else if (vizMode === "scope") drawScope(reading);
-        else drawSpectro(dt, reading);
+        else drawSpectro(vdt, reading);
 
         updateDiag(now);
       }
@@ -2724,6 +2802,8 @@
         audioElement.crossOrigin = "anonymous";
         audioElement.src = t.url;
         audioElement.loop = isLooping;
+        speedApplied = NaN;
+        applySpeed(true); // make sure the new media element uses the knob's rate
 
         pendingSeek = time > 0 ? time : null;
         peakMax = 0;
@@ -3221,6 +3301,7 @@
         if (!knobDrag) return;
         const wasTap = !knobDrag.moved;
         knobDrag = null;
+        if (knobMode === "speed") applySpeed(true); // exact final value on release
         playTactileFeedback("click");
         if (wasTap && knobMode === "reverb") {
           cycleReverbSpace();
