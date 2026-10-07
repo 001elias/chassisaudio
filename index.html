@@ -108,6 +108,119 @@
           inset 0 0 6px rgba(255, 255, 255, 0.2);
       }
 
+      /* ---------------------------------------------------------------------
+         SCENE ATMOSPHERE
+         The chassis PNG is 1053x1920 with real transparency, and its body ends
+         around 85% of the frame with only trailing cables below. Without a
+         contact shadow and a light source it reads as a sticker on black, so the
+         scene gets: a floor haze, a screen-driven glow, a contact shadow, a
+         mirrored reflection, then vignette + grain on top of everything.
+         --------------------------------------------------------------------- */
+      .scene-floor {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background:
+          radial-gradient(80% 40% at 50% 78%, rgba(90, 110, 130, 0.1) 0%, rgba(0, 0, 0, 0) 70%),
+          linear-gradient(180deg, rgba(20, 26, 34, 0.55) 0%, rgba(0, 0, 0, 0) 45%);
+      }
+
+      /* Grounding: three offset dark shadows instead of one centred halo, so the
+         deck reads as an object lit from above rather than a cutout. The tight one
+         lands where the body is widest (~85% down) and anchors it. */
+      #rig-chassis-image {
+        filter:
+          drop-shadow(0 8px 10px rgba(0, 0, 0, 0.85))
+          drop-shadow(0 26px 34px rgba(0, 0, 0, 0.6))
+          drop-shadow(0 60px 90px rgba(0, 0, 0, 0.35));
+      }
+
+      /* Light spilling out of the screen onto the space behind the chassis.
+         Kept dark until the first frame reports a real level so the screen does
+         not appear to glow before playback has started. */
+      .scene-glow {
+        position: absolute;
+        left: 6%;
+        top: 2%;
+        right: 18%;
+        bottom: 38%;
+        z-index: 0;
+        pointer-events: none;
+        /* Two tight pools rather than one wide wash: a big soft ellipse over the
+           whole scene reads as a muddy spotlight, not as light from the panel. */
+        background:
+          radial-gradient(48% 48% at 50% 50%, rgba(255, 205, 145, 0.42) 0%, rgba(255, 180, 95, 0.14) 48%, rgba(255, 160, 70, 0) 72%),
+          radial-gradient(78% 78% at 50% 50%, rgba(255, 190, 120, 0.1) 0%, rgba(255, 170, 80, 0) 74%);
+        filter: blur(18px);
+        mix-blend-mode: screen;
+        opacity: 0.34;
+        will-change: opacity;
+      }
+
+      /* Mirrored copy of the chassis, fading downward: sells a dark reflective
+         surface sitting under the deck. */
+      .rig-reflection {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        height: 100%;
+        z-index: -1;
+        pointer-events: none;
+        opacity: 0.09;
+        filter: blur(8px);
+        transform: scaleY(-1);
+        -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 52%, rgba(0, 0, 0, 1) 100%);
+        mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 52%, rgba(0, 0, 0, 1) 100%);
+      }
+
+      .scene-vignette {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        pointer-events: none;
+        background: radial-gradient(
+          120% 95% at 50% 42%,
+          rgba(0, 0, 0, 0) 30%,
+          rgba(0, 0, 0, 0.35) 68%,
+          rgba(0, 0, 0, 0.75) 100%
+        );
+      }
+
+      /* Pure black reads as a digital void; a little grain reads as photographed
+         space. Kept cheap: one small tiled SVG noise, no runtime cost. */
+      .scene-grain {
+        position: fixed;
+        inset: -50%;
+        z-index: 59;
+        pointer-events: none;
+        opacity: 0.035;
+        mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+        animation: grainDrift 1.2s steps(6) infinite;
+        will-change: transform;
+      }
+      @keyframes grainDrift {
+        0% { transform: translate(0, 0); }
+        20% { transform: translate(-3%, 2%); }
+        40% { transform: translate(2%, -3%); }
+        60% { transform: translate(-2%, -2%); }
+        80% { transform: translate(3%, 1%); }
+        100% { transform: translate(0, 0); }
+      }
+
+      /* An animated grain and a breathing glow are the two things most likely to
+         bother a motion-sensitive viewer, so both settle down here. */
+      @media (prefers-reduced-motion: reduce) {
+        .scene-grain {
+          animation: none;
+        }
+        .scene-glow {
+          transition: none;
+        }
+      }
+
       /* Screen glass inner vignette & angled beveled screen corners matching image 3 screen frame */
       .screen-clip {
         clip-path: polygon(
@@ -294,16 +407,28 @@
         class="w-[500px] h-[750px] bg-slate-400/5 blur-[120px] rounded-full"
       ></div>
     </div>
+    <!-- Floor haze: stops the backdrop reading as infinite void -->
+    <div class="scene-floor"></div>
     <!-- MAIN VIEWPORT RIG CONTAINER: Matches chassis.png aspect ratio (1053x1920) -->
     <main
       class="relative shrink-0 w-[420px] aspect-[1053/1920] flex items-center justify-center z-10"
       id="rig-root"
       style="transform-origin: center center"
     >
+      <!-- Screen light spilling into the space behind the chassis -->
+      <div class="scene-glow" id="screen-glow"></div>
+      <!-- Mirrored chassis below the deck -->
+      <img
+        alt=""
+        aria-hidden="true"
+        class="rig-reflection"
+        id="rig-reflection-image"
+        src="chassis.png"
+      />
       <!-- Actual Hardware Cyberdeck Device Chassis PNG/Render -->
       <img
         alt="Cyberdeck Rig Chassis"
-        class="absolute inset-0 w-full h-full object-contain pointer-events-none z-10 drop-shadow-[0_20px_45px_rgba(0,0,0,0.95)]"
+        class="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
         id="rig-chassis-image"
         src="chassis.png"
       />
@@ -903,6 +1028,14 @@
       let hoverBand = -1;
       let eqDrag = null; // { band } while a bar is being dragged
 
+      // Scene glow: how much light the screen is throwing into the room
+      let glowOut = 0; // smoothed 0..1, drives the .scene-glow opacity
+      let prefersReducedMotion = false;
+      try {
+        prefersReducedMotion =
+          !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      } catch (e) {}
+
       // Clip meter
       let clipUntil = 0;
       let clipCount = 0;
@@ -1028,6 +1161,8 @@
       const waveCanvas = $("wave-canvas");
       const wctx = waveCanvas.getContext("2d");
       const rigRoot = $("rig-root");
+      const screenGlowEl = $("screen-glow");
+      const rigReflectionEl = $("rig-reflection-image");
       const audioElement = $("core-audio-element");
       const playBtn = $("btn-play");
       const playIcon = $("play-icon");
@@ -2145,6 +2280,40 @@
         peakIndicator.classList.toggle("lit", on);
       }
 
+      // How much light the screen throws into the room: follows the program level,
+      // scaled down by the performance governor so a struggling phone stops paying for it.
+      function updateSceneGlow(now, reading, dt) {
+        if (!screenGlowEl) return;
+        let target;
+        if (!isDeviceOn) target = 0;
+        else if (reading && timeData) {
+          let sum = 0;
+          const n = timeData.length;
+          for (let i = 0; i < n; i += 4) {
+            const a = timeData[i];
+            sum += a * a;
+          }
+          const rms = Math.sqrt(sum / (n / 4));
+          target = 0.3 + Math.min(1, rms * 2.6) * 0.7; // stays lit, rises with the music
+        } else {
+          target = 0.3; // powered but not playing
+        }
+        if (prefersReducedMotion) {
+          // No breathing for motion-sensitive viewers: one constant, honest level.
+          glowOut = target;
+        } else {
+          // Frame-rate independent smoothing (exponential approach to the target).
+          // Clamped to 0..1: a non-monotonic timestamp would otherwise make the exponent
+          // blow up and drive the glow negative.
+          const k = clamp(1 - Math.pow(0.001, Math.max(0, dt || 0)), 0, 1);
+          glowOut += (target - glowOut) * k;
+        }
+        const swell = prefersReducedMotion ? 1 : 1 + Math.sin(now / 1700) * 0.045;
+        const perfScale = perfTier >= 2 ? 0.7 : 1;
+        const level = Math.max(0, Math.min(1.05, glowOut * 1.02 * swell * perfScale));
+        screenGlowEl.style.opacity = level.toFixed(3);
+      }
+
       function updateMeter(now, reading) {
         let pk = 0;
         if (reading && timeData) {
@@ -3025,6 +3194,9 @@
         // Drive the buffer engine's transport (position, end-of-track) off the frame loop.
         if (engineMode === "buffer") engineTick();
 
+        // Keep the mirrored copy mirrored; flipping the blur+crop once has no effect.
+        if (rigReflectionEl) rigReflectionEl.style.transform = "scaleY(-1)";
+
         // Frame-rate governor (safety net for slow phones): if frames keep taking too long,
         // first halve the visualizer rate, then lower pixel density and glow. Only steps down.
         if (rawMs > 0 && rawMs < 250) {
@@ -3056,6 +3228,7 @@
           peakHolds.fill(0);
           clipUntil = 0;
           setLamp(false);
+          updateSceneGlow(now, false, dt); // powering down must also put the room light out
           return;
         }
 
@@ -3065,6 +3238,7 @@
           analyser.getFloatTimeDomainData(timeData);
         }
         updateMeter(now, reading); // clip detection stays at full frame rate
+        updateSceneGlow(now, reading, dt); // room light reacts to the program level
 
         vizAcc += dt;
         if (vizEvery > 1 && ++vizFrame % vizEvery !== 0) {
