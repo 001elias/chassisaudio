@@ -150,11 +150,11 @@
         /* Two tight pools rather than one wide wash: a big soft ellipse over the
            whole scene reads as a muddy spotlight, not as light from the panel. */
         background:
-          radial-gradient(48% 48% at 50% 50%, rgba(255, 205, 145, 0.42) 0%, rgba(255, 180, 95, 0.14) 48%, rgba(255, 160, 70, 0) 72%),
-          radial-gradient(78% 78% at 50% 50%, rgba(255, 190, 120, 0.1) 0%, rgba(255, 170, 80, 0) 74%);
+          radial-gradient(48% 48% at 50% 50%, rgba(255, 205, 145, 0.55) 0%, rgba(255, 180, 95, 0.2) 48%, rgba(255, 160, 70, 0) 72%),
+          radial-gradient(78% 78% at 50% 50%, rgba(255, 190, 120, 0.14) 0%, rgba(255, 170, 80, 0) 74%);
         filter: blur(18px);
         mix-blend-mode: screen;
-        opacity: 0.34;
+        opacity: 0.55;
         will-change: opacity;
       }
 
@@ -2294,9 +2294,9 @@
             sum += a * a;
           }
           const rms = Math.sqrt(sum / (n / 4));
-          target = 0.3 + Math.min(1, rms * 2.6) * 0.7; // stays lit, rises with the music
+          target = 0.45 + Math.min(1, rms * 2.6) * 0.55; // stays lit, rises with the music
         } else {
-          target = 0.3; // powered but not playing
+          target = 0.45; // powered but not playing
         }
         if (prefersReducedMotion) {
           // No breathing for motion-sensitive viewers: one constant, honest level.
@@ -2310,7 +2310,7 @@
         }
         const swell = prefersReducedMotion ? 1 : 1 + Math.sin(now / 1700) * 0.045;
         const perfScale = perfTier >= 2 ? 0.7 : 1;
-        const level = Math.max(0, Math.min(1.05, glowOut * 1.02 * swell * perfScale));
+        const level = Math.max(0, Math.min(1.2, glowOut * 1.18 * swell * perfScale));
         screenGlowEl.style.opacity = level.toFixed(3);
       }
 
