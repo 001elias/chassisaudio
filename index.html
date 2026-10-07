@@ -743,6 +743,26 @@
       const SPEED_COMMIT_MS = 100; // max rate of playbackRate writes while the speed knob moves
       const PERF_SLOW_MS = 40; // average frame time above this (< 25 fps) triggers a lighter mode
 
+      // --- SpeedKnob / iOS media-pipeline workaround -------------------------
+      // WebKit flushes the AVPlayer pipeline on EVERY playbackRate write while the
+      // element is playing, and that flush is an audible gap (~200-300 ms on iOS).
+      // Hooking the element up with createMediaElementSource makes it worse and also
+      // makes preservesPitch=false unreliable. Tracked upstream as:
+      //   https://bugs.webkit.org/show_bug.cgi?id=163433  (rate change => pause in playback)
+      //   https://bugs.webkit.org/show_bug.cgi?id=240405  (choppy audio + ignores preservesPitch)
+      // So on iOS we never rewrite the rate mid-drag: the knob/readout track the
+      // finger live, the audio keeps playing at the last committed rate, and the new
+      // rate is applied exactly once on release while the output is ducked.
+      const IS_IOS =
+        /iP(hone|ad|od)/.test(navigator.platform) ||
+        (/Mac/.test(navigator.platform) && "ontouchend" in document) ||
+        (navigator.maxTouchPoints > 1 && /Mac|iPhone|iPad/.test(navigator.platform || ""));
+      const IOS_RATE_DUCK_MS = 380; // cover the AVPlayer flush after a rate write
+      const IOS_RATE_SETTLE_MS = 140; // let the new rate take hold before un-ducking
+      let masterVol = 0.8; // the user's volume, kept so ducking can restore it exactly
+      let rateGuardToken = 0; // lets only the newest rate change run its stall recovery
+      let duckGuardToken = 0; // cancels a superseded un-duck, so the output can never stay ducked
+
       // Signal path
       const DRIVE_GAIN = 1.35; // set to 1 if PEAK LIM should reflect the raw mix
       const CLIP_THRESHOLD = 0.99; // |sample| at/above this counts as clipping
@@ -1354,7 +1374,8 @@
 
           masterGain = audioCtx.createGain();
           const v = parseFloat(volSlider.value);
-          masterGain.gain.value = isNaN(v) ? 0.8 : v;
+          masterVol = isNaN(v) ? 0.8 : v;
+          masterGain.gain.value = masterVol;
 
           let prev = biquadFilter;
           for (const f of eqNodes) {
@@ -1549,20 +1570,69 @@
       // Phones' media pipelines struggle when playbackRate is rewritten on every touch
       // move (60-120x per second). The knob + readout still follow your finger instantly;
       // the audio rate is committed at most every SPEED_COMMIT_MS, plus once on release.
+      // On iOS even ONE mid-playback write costs a ~250 ms gap (163433), so there the rate
+      // is committed only on release / track change, never while the finger is moving.
       let speedTimer = null;
       let speedLast = 0;
       let speedApplied = NaN;
+      let speedDragging = false; // knob is held down; used to gate iOS rate writes
+
+      // Duck the master output around a rate change so the AVPlayer pipeline flush is
+      // hidden instead of being audible as a stutter. Ducking (a gain ramp), not
+      // mute=true, keeps it click-free and independent of the element's own state.
+      function duckMaster(on) {
+        if (!masterGain || !audioCtx) return;
+        try {
+          masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          masterGain.gain.setTargetAtTime(on ? 0 : masterVol, audioCtx.currentTime, 0.02);
+        } catch (e) {
+          masterGain.gain.value = on ? 0 : masterVol;
+        }
+      }
+
+      // iOS: apply the rate once, behind a duck. WebKit flushes the pipeline on the
+      // write itself (163433), and that flush is what you hear as the stutter, so the
+      // output is faded out for the duration. The element is deliberately NOT paused:
+      // a second change arriving inside this window would then be the only one that
+      // knows how to resume it, and any lost resume means permanent silence.
+      function applySpeedIos(r) {
+        const rateToken = ++rateGuardToken;
+        audioElement.defaultPlaybackRate = r;
+        audioElement.playbackRate = r;
+        // A newer rate change takes ownership of the duck and schedules its own un-duck,
+        // so back-to-back changes can never leave the output muted.
+        const duckToken = ++duckGuardToken;
+        duckMaster(true);
+        setTimeout(() => {
+          if (rateToken === rateGuardToken) {
+            // Recover a pipeline that stalled on the rate change: if the app still thinks
+            // it is playing but the element has stopped, restart it.
+            if (isDeviceOn && isPlaying && !audioElement.ended && audioElement.paused)
+              audioElement.play().catch(() => {});
+          }
+          setTimeout(() => {
+            if (duckToken === duckGuardToken) duckMaster(false); // only the last change un-ducks
+          }, IOS_RATE_SETTLE_MS);
+        }, IOS_RATE_DUCK_MS);
+      }
+
       function commitSpeed() {
         speedTimer = null;
+        if (IS_IOS && speedDragging) return; // never re-rate mid-gesture on iOS
         const r = Math.round(speedFromN(speedN) * 100) / 100;
         if (r === speedApplied) return;
         speedApplied = r;
         speedLast = performance.now();
-        // defaultPlaybackRate survives the src change when a new track loads
-        audioElement.defaultPlaybackRate = r;
-        audioElement.playbackRate = r;
+        if (IS_IOS) applySpeedIos(r);
+        else {
+          // defaultPlaybackRate survives the src change when a new track loads
+          audioElement.defaultPlaybackRate = r;
+          audioElement.playbackRate = r;
+        }
       }
       function applySpeed(immediate = false) {
+        // While the finger is down on iOS, keep the current rate: every write costs a gap.
+        if (IS_IOS && speedDragging) return;
         if (immediate) {
           clearTimeout(speedTimer);
           return commitSpeed();
@@ -1573,8 +1643,9 @@
 
       function applyVolume() {
         const val = parseFloat(volSlider.value);
-        volReadout.textContent = `${Math.round(val * 100)}%`;
-        audioElement.volume = val;
+        masterVol = isNaN(val) ? 0.8 : val;
+        volReadout.textContent = `${Math.round(masterVol * 100)}%`;
+        audioElement.volume = masterVol;
         if (masterGain)
           masterGain.gain.setValueAtTime(val, audioCtx.currentTime);
       }
@@ -1611,7 +1682,18 @@
         } else if (mode === "speed") {
           if (Math.abs(n - 0.5) < 0.012) n = 0.5; // detent at 1.00x
           speedN = n;
-          applySpeed();
+          // iOS: while the knob is held the element keeps its old rate on purpose; the
+          // new rate is committed once on release (see commitSpeed / applySpeedIos).
+          if (IS_IOS) {
+            if (!speedDragging) {
+              speedDragging = true;
+              clearTimeout(speedTimer);
+              speedTimer = null;
+              flashStatus("SPEED: HELD, APPLIES ON RELEASE");
+            }
+          } else {
+            applySpeed();
+          }
         } else if (mode === "volume") {
           volSlider.value = n.toFixed(2);
           applyVolume();
@@ -3283,6 +3365,8 @@
       // In EQ mode a plain tap steps to the next band.
       // -----------------------------------------------------------------------
       let knobDrag = null;
+      let lastKnobTap = 0; // iOS double-tap on SPEED snaps back to 1.00x
+      const KNOB_DOUBLE_TAP_MS = 350;
       hotspotKnob.addEventListener("pointerdown", (e) => {
         if (e.button > 0) return;
         e.preventDefault();
@@ -3301,8 +3385,26 @@
         if (!knobDrag) return;
         const wasTap = !knobDrag.moved;
         knobDrag = null;
-        if (knobMode === "speed") applySpeed(true); // exact final value on release
+        // The finger is up, so iOS may write the rate again: commit the exact final value.
+        if (knobMode === "speed") {
+          speedDragging = false;
+          applySpeed(true);
+        }
         playTactileFeedback("click");
+        if (wasTap && knobMode === "speed" && IS_IOS) {
+          // A tap with no drag cannot reach 1.00x on a phone (the detent needs travel),
+          // so double-tap gives the speed knob a way home.
+          const now = performance.now();
+          if (now - lastKnobTap < KNOB_DOUBLE_TAP_MS) {
+            lastKnobTap = 0;
+            speedN = 0.5;
+            updateKnobUI();
+            applySpeed(true);
+            flashStatus("SPEED: 1.00x", 1400);
+          } else {
+            lastKnobTap = now;
+          }
+        }
         if (wasTap && knobMode === "reverb") {
           cycleReverbSpace();
         } else if (wasTap && knobMode === "eq") {
@@ -3315,6 +3417,11 @@
       hotspotKnob.addEventListener("pointerup", endKnobDrag);
       hotspotKnob.addEventListener("pointercancel", () => {
         knobDrag = null;
+        // A cancelled gesture must not leave the speed knob gated forever.
+        if (speedDragging) {
+          speedDragging = false;
+          applySpeed(true);
+        }
       });
       hotspotKnob.addEventListener(
         "wheel",
