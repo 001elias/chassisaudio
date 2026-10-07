@@ -743,25 +743,24 @@
       const SPEED_COMMIT_MS = 100; // max rate of playbackRate writes while the speed knob moves
       const PERF_SLOW_MS = 40; // average frame time above this (< 25 fps) triggers a lighter mode
 
-      // --- SpeedKnob / iOS media-pipeline workaround -------------------------
-      // WebKit flushes the AVPlayer pipeline on EVERY playbackRate write while the
-      // element is playing, and that flush is an audible gap (~200-300 ms on iOS).
-      // Hooking the element up with createMediaElementSource makes it worse and also
-      // makes preservesPitch=false unreliable. Tracked upstream as:
-      //   https://bugs.webkit.org/show_bug.cgi?id=163433  (rate change => pause in playback)
-      //   https://bugs.webkit.org/show_bug.cgi?id=240405  (choppy audio + ignores preservesPitch)
-      // So on iOS we never rewrite the rate mid-drag: the knob/readout track the
-      // finger live, the audio keeps playing at the last committed rate, and the new
-      // rate is applied exactly once on release while the output is ducked.
+      // --- iOS media-pipeline workaround --------------------------------------
+      // Applying speed on the <audio> element is broken on iOS:
+      //   https://bugs.webkit.org/show_bug.cgi?id=163433  every playbackRate write
+      //     flushes the AVPlayer pipeline -> a ~200-300 ms audible gap.
+      //   https://bugs.webkit.org/show_bug.cgi?id=240405  with createMediaElementSource
+      //     the audio is choppy AND preservesPitch=false is ignored, so the pitch you
+      //     hear is a time-stretch approximation rather than the rate you asked for.
+      // The fix is to stop asking the media element for speed at all on iOS: the track
+      // is decoded into an AudioBuffer and played by an AudioBufferSourceNode, whose
+      // playbackRate parameter resamples inside the audio graph. That is exact (pitch
+      // = 12*log2(rate) semitones), instant, and touches no AVPlayer pipeline.
       const IS_IOS =
         /iP(hone|ad|od)/.test(navigator.platform) ||
         (/Mac/.test(navigator.platform) && "ontouchend" in document) ||
         (navigator.maxTouchPoints > 1 && /Mac|iPhone|iPad/.test(navigator.platform || ""));
-      const IOS_RATE_DUCK_MS = 380; // cover the AVPlayer flush after a rate write
-      const IOS_RATE_SETTLE_MS = 140; // let the new rate take hold before un-ducking
-      let masterVol = 0.8; // the user's volume, kept so ducking can restore it exactly
-      let rateGuardToken = 0; // lets only the newest rate change run its stall recovery
-      let duckGuardToken = 0; // cancels a superseded un-duck, so the output can never stay ducked
+      const BUFFER_ENGINE = IS_IOS; // element playback stays the path everywhere else
+      const PCM_BUDGET_MB = 150; // above this decoded size we keep the element engine
+      const PCM_BUDGET_BYTES = PCM_BUDGET_MB * 1024 * 1024;
 
       // Signal path
       const DRIVE_GAIN = 1.35; // set to 1 if PEAK LIM should reflect the raw mix
@@ -924,10 +923,101 @@
       const revIRCache = new Map(); // "rate|space" -> [L, R] impulse response
       let mediaSourceNode = null;
       let biquadFilter = null;
+      let graphIn = null; // single node every playback engine feeds, so the chain never changes
       let eqNodes = null;
       let freqData = null;
       let timeData = null;
       let bandBins = null;
+
+      // =======================================================================
+      // PLAYBACK ENGINE
+      // Element engine everywhere by default; on iOS the track is decoded once and
+      // played by an AudioBufferSourceNode so speed/pitch lives inside the audio graph.
+      // =======================================================================
+      let masterVol = 0.8; // the user's volume, kept so ducking can restore it exactly
+      let engineMode = "element"; // "element" | "buffer"
+      let bufferSource = null; // AudioBufferSourceNode currently playing, if any
+      let audioBuffer = null; // decoded PCM for the current track
+      let bufferDuration = 0;
+      let sourceStartedAt = 0; // audioCtx.currentTime when bufferSource started
+      let sourceOffset = 0; // track seconds the current source started from
+      let enginePos = 0; // last known position while paused / seeking
+      let bufferLoading = false;
+      let bufferToken = 0; // invalidates a decode that finishes after the track changed
+      let bufferSrcUrl = null; // track url the loaded audioBuffer belongs to
+      let exactRate = 1; // the rate actually handed to the engine (drives the readout too)
+      let rateGuardToken = 0; // lets only the newest rate change run its stall recovery
+      let duckGuardToken = 0; // cancels a superseded un-duck, so the output can never stay ducked
+      const playerHandlers = { play: [], pause: [], timeupdate: [], ended: [], loadedmetadata: [] };
+
+      // =======================================================================
+      // PLAYER FACADE
+      // One transport for both engines. Everything outside this object talks to
+      // `player`, so play/pause/seek/loop and the UI events stay engine-agnostic.
+      // Declared here, above the engine helpers that use it, because those helpers run
+      // during module evaluation order-sensitive paths (boot before the frame loop).
+      // =======================================================================
+      const player = {
+        get duration() {
+          return engineMode === "buffer" && bufferDuration > 0 ? bufferDuration : audioElement.duration;
+        },
+        get currentTime() {
+          return engineMode === "buffer" ? enginePosNow() : audioElement.currentTime;
+        },
+        set currentTime(t) {
+          if (engineMode === "buffer") {
+            if (!audioBuffer) return;
+            const wasPlaying = !!bufferSource;
+            enginePos = clamp(t, 0, Math.max(0, bufferDuration - 0.02));
+            if (wasPlaying) startBufferSource(enginePos);
+            return;
+          }
+          audioElement.currentTime = t;
+        },
+        get paused() {
+          return engineMode === "buffer" ? !bufferSource : audioElement.paused;
+        },
+        get ended() {
+          return engineMode === "buffer" ? enginePos >= bufferDuration && bufferDuration > 0 : audioElement.ended;
+        },
+        get volume() {
+          return engineMode === "buffer" ? masterVol : audioElement.volume;
+        },
+        set volume(v) {
+          setMasterVol(v);
+        },
+        play() {
+          if (engineMode === "buffer") {
+            enginePlay();
+            return Promise.resolve();
+          }
+          return audioElement.play();
+        },
+        pause() {
+          if (engineMode === "buffer") {
+            enginePause();
+            return;
+          }
+          audioElement.pause();
+        },
+        getAttribute(name) {
+          if (name === "src") return bufferSrcUrl || audioElement.getAttribute("src");
+          return audioElement.getAttribute(name);
+        },
+        removeAttribute(name) {
+          audioElement.removeAttribute(name);
+        },
+        load() {
+          resetEngine();
+          audioElement.load();
+        },
+        get error() {
+          return audioElement.error;
+        },
+        one(type, fn) {
+          if (playerHandlers[type]) playerHandlers[type].push(fn);
+        },
+      };
 
       // =======================================================================
       // DOM
@@ -1072,7 +1162,7 @@
             STATE_KEY,
             JSON.stringify({
               trackId: t ? t.id : null,
-              time: pendingSeek ?? (audioElement.currentTime || 0),
+              time: pendingSeek ?? (player.currentTime || 0),
               volume: parseFloat(volSlider.value),
               shuffle: isShuffle,
               loop: isLooping,
@@ -1369,13 +1459,19 @@
             return f;
           });
 
+          // Everything that produces audio feeds graphIn, so switching playback engine
+          // (media element <-> decoded buffer) never has to rewire the effect chain.
+          graphIn = audioCtx.createGain();
+          graphIn.gain.value = 1;
+          graphIn.connect(biquadFilter);
+
           driveGain = audioCtx.createGain();
           driveGain.gain.value = DRIVE_GAIN;
 
           masterGain = audioCtx.createGain();
           const v = parseFloat(volSlider.value);
           masterVol = isNaN(v) ? 0.8 : v;
-          masterGain.gain.value = masterVol;
+          masterGain.gain.value = engineMode === "buffer" ? masterVol : 1;
 
           let prev = biquadFilter;
           for (const f of eqNodes) {
@@ -1401,13 +1497,192 @@
 
           try {
             mediaSourceNode = audioCtx.createMediaElementSource(audioElement);
-            mediaSourceNode.connect(biquadFilter);
+            mediaSourceNode.connect(graphIn);
           } catch (e) {}
 
           computeBandBins();
           if (reverbN > 0) ensureReverb();
         }
         if (audioCtx.state === "suspended") audioCtx.resume();
+      }
+
+      // =======================================================================
+      // BUFFER ENGINE (iOS)
+      // Plays the decoded track through an AudioBufferSourceNode. Speed is a
+      // playbackRate AudioParam write inside the graph, so it resamples exactly
+      // (pitch = 12*log2(rate) semitones), applies immediately, and never touches
+      // the AVPlayer pipeline that caused the stutter on the media element.
+      // =======================================================================
+      function firePlayer(type) {
+        const list = playerHandlers[type];
+        if (!list) return;
+        for (const fn of list.slice()) {
+          try {
+            fn();
+          } catch (e) {}
+        }
+      }
+
+      const enginePosNow = () =>
+        engineMode === "buffer"
+          ? Math.min(bufferDuration, sourceOffset + (audioCtx.currentTime - sourceStartedAt) * exactRate)
+          : player.currentTime;
+
+      function stopBufferSource() {
+        const src = bufferSource;
+        if (!src) return;
+        bufferSource = null;
+        try {
+          src.onended = null;
+          src.stop();
+        } catch (e) {}
+        try {
+          src.disconnect();
+        } catch (e) {}
+      }
+
+      function startBufferSource(offset) {
+        if (!audioCtx || !audioBuffer) return;
+        stopBufferSource();
+        const src = audioCtx.createBufferSource();
+        src.buffer = audioBuffer;
+        src.loop = !!isLooping;
+        src.playbackRate.value = exactRate;
+        const off = clamp(offset, 0, Math.max(0, bufferDuration - 0.001));
+        src.connect(graphIn);
+        src.start(0, off);
+        bufferSource = src;
+        sourceOffset = off;
+        sourceStartedAt = audioCtx.currentTime;
+        enginePos = off;
+      }
+
+      // Files too large to hand the decoder in one piece: peek at the format to
+      // estimate the decoded size before committing to the decode.
+      async function withinPcmBudget(url) {
+        try {
+          const r = await fetch(url, { headers: { Range: "bytes=0-131071" } });
+          const ab = await r.arrayBuffer();
+          const dv = new DataView(ab);
+          let total = 0;
+          const cl = r.headers.get("content-range");
+          if (cl && cl.includes("/")) total = parseInt(cl.split("/")[1], 10) || 0;
+          if (!total) total = parseInt(r.headers.get("content-length") || "0", 10) || 0;
+          const view = new Uint8Array(ab);
+          const text = new TextDecoder("latin1").decode(view.subarray(0, Math.min(view.length, 65536)));
+          let br = 0;
+          let m = /(?:bitrate|BPS)=(\d+)/i.exec(text);
+          if (m) br = parseInt(m[1], 10) / 1000;
+          if (!br) {
+            m = /MPEG-1 Layer 3[^\n]*?(\d{2,3})\s*kbps/i.exec(text);
+            if (m) br = parseInt(m[1], 10);
+          }
+          if (total && br > 0) {
+            const secs = (total * 8) / (br * 1000);
+            const bytes = secs * audioCtx.sampleRate * 2 * 4; // stereo, Float32
+            if (bytes > PCM_BUDGET_BYTES) {
+              console.info(
+                `[engine] ${Math.round(secs)}s @ ${Math.round(br)}kbps needs ~${Math.round(bytes / 1048576)}MB of PCM ` +
+                  `(budget ${PCM_BUDGET_MB}MB) - staying on the media element engine`,
+              );
+              return false;
+            }
+          }
+        } catch (e) {} // probe failures are not fatal; callers still guard the decode
+        return true;
+      }
+
+      async function loadBufferIntoEngine(token, url, positionFn, autoplay) {
+        try {
+          if (!(await withinPcmBudget(url))) return false;
+          if (token !== bufferToken) return false;
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          const raw = await resp.arrayBuffer();
+          if (token !== bufferToken) return false;
+          // Detach so decodeAudioData can take ownership of the buffer in Safari.
+          const pcm = await audioCtx.decodeAudioData(raw.slice(0));
+          if (token !== bufferToken) return false;
+
+          audioBuffer = pcm;
+          bufferDuration = pcm.duration;
+          bufferSrcUrl = url;
+          engineMode = "buffer";
+          bufferLoading = false;
+          setMasterVol(masterVol); // element goes silent, level moves into the graph
+
+          // Read the position at completion, not at request time, so a scrub or a
+          // restored offset that happened during the decode is still honoured.
+          enginePos = clamp(positionFn() || 0, 0, Math.max(0, bufferDuration - 0.05));
+          sourceOffset = enginePos;
+          sourceStartedAt = audioCtx.currentTime;
+          pendingSeek = null;
+
+          const t = tracks[currentIndex];
+          if (t && isFinite(pcm.duration)) t.duration = pcm.duration;
+          firePlayer("loadedmetadata");
+
+          if (autoplay) enginePlay();
+          return true;
+        } catch (e) {
+          bufferLoading = false;
+          console.info("[engine] buffer decode unavailable, using the media element", e);
+          return false;
+        }
+      }
+
+      function enginePlay() {
+        if (!audioBuffer) return;
+        if (bufferSource) return; // already rolling; startBufferSource would replace it
+        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+        if (enginePos >= bufferDuration - 0.02) enginePos = 0;
+        startBufferSource(enginePos);
+        if (isPlaying !== true) firePlayer("play");
+      }
+
+      function enginePause() {
+        if (!bufferSource) return;
+        enginePos = enginePosNow();
+        stopBufferSource();
+        firePlayer("pause");
+      }
+
+      function engineTick() {
+        if (engineMode !== "buffer" || !bufferSource) return;
+        enginePos = enginePosNow();
+        firePlayer("timeupdate");
+        if (!bufferSource.loop && enginePos >= bufferDuration - 0.02) {
+          stopBufferSource();
+          enginePos = bufferDuration;
+          firePlayer("ended");
+        }
+      }
+
+      // Switch engines for a newly selected track. Returns a promise that resolves to
+      // true only when the buffer engine took over; otherwise the element keeps playing.
+      function selectEngineFor(url, positionFn, autoplay) {
+        if (!BUFFER_ENGINE || !audioCtx || !graphIn) return Promise.resolve(false);
+        const token = ++bufferToken;
+        if (bufferSrcUrl !== url) {
+          audioBuffer = null;
+          bufferDuration = 0;
+          enginePos = 0;
+          bufferSrcUrl = null;
+        }
+        bufferLoading = true;
+        return loadBufferIntoEngine(token, url, positionFn, autoplay);
+      }
+
+      function resetEngine() {
+        bufferToken++;
+        stopBufferSource();
+        audioBuffer = null;
+        bufferDuration = 0;
+        bufferSrcUrl = null;
+        enginePos = 0;
+        sourceOffset = 0;
+        bufferLoading = false;
+        engineMode = "element";
       }
 
       // FFT bin range for each of the 7 bands (edges tile the spectrum)
@@ -1575,11 +1850,32 @@
       let speedTimer = null;
       let speedLast = 0;
       let speedApplied = NaN;
-      let speedDragging = false; // knob is held down; used to gate iOS rate writes
+      let speedDragging = false;
 
-      // Duck the master output around a rate change so the AVPlayer pipeline flush is
-      // hidden instead of being audible as a stutter. Ducking (a gain ramp), not
-      // mute=true, keeps it click-free and independent of the element's own state.
+      // --- Volume / ducking ---------------------------------------------------
+      // In buffer mode the element is silent and level lives in the graph; in element
+      // mode the element carries it and the graph stays at unity so nothing is counted twice.
+      function setMasterVol(v) {
+        masterVol = clamp(v, 0, 1);
+        try {
+          audioElement.volume = engineMode === "buffer" ? 0 : masterVol;
+        } catch (e) {}
+        if (masterGain && audioCtx) {
+          try {
+            masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+            masterGain.gain.setTargetAtTime(
+              engineMode === "buffer" ? masterVol : 1,
+              audioCtx.currentTime,
+              0.015,
+            );
+          } catch (e) {
+            masterGain.gain.value = engineMode === "buffer" ? masterVol : 1;
+          }
+        }
+      }
+
+      // Ducked only by the element-engine fallback, to hide the AVPlayer flush that
+      // WebKit performs on each rate write. The buffer engine never needs this.
       function duckMaster(on) {
         if (!masterGain || !audioCtx) return;
         try {
@@ -1590,49 +1886,77 @@
         }
       }
 
-      // iOS: apply the rate once, behind a duck. WebKit flushes the pipeline on the
-      // write itself (163433), and that flush is what you hear as the stutter, so the
-      // output is faded out for the duration. The element is deliberately NOT paused:
-      // a second change arriving inside this window would then be the only one that
-      // knows how to resume it, and any lost resume means permanent silence.
-      function applySpeedIos(r) {
-        const rateToken = ++rateGuardToken;
+      // --- Speed --------------------------------------------------------------
+      // recordSpeed is the single place the rate is stored. applySpeedNow pushes it into
+      // the audio graph (buffer engine); forceElementRate pushes the quantised value onto
+      // the media element (element engine, used on load and whenever we are not dragging).
+      function recordSpeed(exact) {
+        const was = exactRate;
+        exactRate = exact;
+        if (was !== exact) queueKnobUI();
+      }
+
+      function forceElementRate() {
+        const r = Math.round(exactRate * 100) / 100;
+        recordSpeed(r); // the element quantises to 0.01x, so the readout must match it
+        if (r === speedApplied) return r;
+        speedApplied = r;
         audioElement.defaultPlaybackRate = r;
         audioElement.playbackRate = r;
-        // A newer rate change takes ownership of the duck and schedules its own un-duck,
-        // so back-to-back changes can never leave the output muted.
+        return r;
+      }
+
+      // In buffer mode this is an AudioParam write inside the audio graph: exact,
+      // click-free, and safe to do on every frame.
+      function applySpeedNow(rate) {
+        recordSpeed(Math.round(rate * 1000) / 1000);
+        if (engineMode !== "buffer" || !bufferSource) return;
+        try {
+          bufferSource.playbackRate.setValueAtTime(exactRate, audioCtx.currentTime);
+        } catch (e) {
+          bufferSource.playbackRate.value = exactRate;
+        }
+      }
+
+      // Element-engine fallback for iOS: write the rate once, behind a duck, so the
+      // ~250 ms AVPlayer flush is hidden. The duck is handed to the newest change, so the
+      // output can never be left muted.
+      function applySpeedElement() {
+        const r = forceElementRate();
+        const rateToken = ++rateGuardToken;
         const duckToken = ++duckGuardToken;
         duckMaster(true);
         setTimeout(() => {
           if (rateToken === rateGuardToken) {
-            // Recover a pipeline that stalled on the rate change: if the app still thinks
-            // it is playing but the element has stopped, restart it.
             if (isDeviceOn && isPlaying && !audioElement.ended && audioElement.paused)
               audioElement.play().catch(() => {});
           }
           setTimeout(() => {
-            if (duckToken === duckGuardToken) duckMaster(false); // only the last change un-ducks
-          }, IOS_RATE_SETTLE_MS);
-        }, IOS_RATE_DUCK_MS);
+            if (duckToken === duckGuardToken) duckMaster(false);
+          }, 140);
+        }, 380);
+        return r;
       }
 
       function commitSpeed() {
         speedTimer = null;
-        if (IS_IOS && speedDragging) return; // never re-rate mid-gesture on iOS
-        const r = Math.round(speedFromN(speedN) * 100) / 100;
-        if (r === speedApplied) return;
-        speedApplied = r;
+        const exact = Math.round(speedFromN(speedN) * 1000) / 1000;
         speedLast = performance.now();
-        if (IS_IOS) applySpeedIos(r);
-        else {
-          // defaultPlaybackRate survives the src change when a new track loads
-          audioElement.defaultPlaybackRate = r;
-          audioElement.playbackRate = r;
+        if (engineMode === "buffer") {
+          applySpeedNow(exact); // live and exact: no throttle, no ducking, no element write
+          return;
+        }
+        recordSpeed(exact); // exactRate drives the readout even before quantisation
+        if (IS_IOS) {
+          if (speedDragging) return; // a write per touch move would cost a gap each time
+          applySpeedElement(); // one write, behind a duck
+        } else {
+          forceElementRate(); // desktop: the media pipeline handles live rate changes fine
         }
       }
+
       function applySpeed(immediate = false) {
-        // While the finger is down on iOS, keep the current rate: every write costs a gap.
-        if (IS_IOS && speedDragging) return;
+        if (engineMode === "element" && IS_IOS && speedDragging) return; // costs a gap per write
         if (immediate) {
           clearTimeout(speedTimer);
           return commitSpeed();
@@ -1643,11 +1967,8 @@
 
       function applyVolume() {
         const val = parseFloat(volSlider.value);
-        masterVol = isNaN(val) ? 0.8 : val;
+        setMasterVol(isNaN(val) ? 0.8 : val);
         volReadout.textContent = `${Math.round(masterVol * 100)}%`;
-        audioElement.volume = masterVol;
-        if (masterGain)
-          masterGain.gain.setValueAtTime(val, audioCtx.currentTime);
       }
 
       function setEqGain(i, g) {
@@ -1683,7 +2004,7 @@
           if (Math.abs(n - 0.5) < 0.012) n = 0.5; // detent at 1.00x
           speedN = n;
           // iOS: while the knob is held the element keeps its old rate on purpose; the
-          // new rate is committed once on release (see commitSpeed / applySpeedIos).
+          // iOS element fallback: the rate is applied once on release (see commitSpeed).
           if (IS_IOS) {
             if (!speedDragging) {
               speedDragging = true;
@@ -1716,7 +2037,9 @@
             return filterN >= 0.995 ? "OPEN" : `LP ${fmtHz(filterHz(filterN))}`;
           case "speed":
             {
-              const r = speedFromN(speedN);
+              // Built from exactRate, the value actually handed to the audio engine, so
+              // the number on the display and the pitch you hear cannot disagree.
+              const r = exactRate;
               const st = 12 * Math.log2(r);
               return Math.abs(st) < 0.05
                 ? "1.00x"
@@ -2593,13 +2916,13 @@
           waveLabel("NO SIGNAL", w, h);
           return;
         }
-        const ad = audioElement.duration;
+        const ad = player.duration;
         const dur = ad > 0 && isFinite(ad) ? ad : t.duration || 0;
         const cur = scrubbing
           ? scrubFrac * dur
           : pendingSeek != null
             ? pendingSeek
-            : audioElement.currentTime;
+            : player.currentTime;
         const frac = dur > 0 ? clamp(cur / dur, 0, 1) : 0;
         const px = frac * w;
 
@@ -2654,12 +2977,12 @@
         return clamp((e.clientX - r.left) / r.width, 0, 1);
       }
       function seekToFraction(f, force = false) {
-        const d = audioElement.duration;
+        const d = player.duration;
         if (!(d > 0) || !isFinite(d)) return;
         const now = performance.now();
         if (!force && now - lastSeekAt < 50) return; // throttle live scrubbing
         lastSeekAt = now;
-        audioElement.currentTime = f * d;
+        player.currentTime = f * d;
         timeCurrent.textContent = formatTime(f * d);
       }
       timelineContainer.addEventListener("pointerdown", (e) => {
@@ -2698,6 +3021,9 @@
         const rawMs = now - lastFrame;
         const dt = Math.min(0.1, rawMs / 1000 || 0.016);
         lastFrame = now;
+
+        // Drive the buffer engine's transport (position, end-of-track) off the frame loop.
+        if (engineMode === "buffer") engineTick();
 
         // Frame-rate governor (safety net for slow phones): if frames keep taking too long,
         // first halve the visualizer rate, then lower pixel density and glow. Only steps down.
@@ -2795,7 +3121,7 @@
 
           const marker = document.createElement("span");
           marker.className = "w-2 shrink-0 text-white";
-          marker.textContent = isCurrent ? (isPlaying ? "▶" : "▮") : "";
+          marker.textContent = isCurrent ? (isPlaying ? "â–¶" : "â–®") : "";
 
           const name = document.createElement("span");
           name.className = "truncate flex-1 uppercase";
@@ -2809,7 +3135,7 @@
           del.className =
             "shrink-0 px-1 text-zinc-500 hover:text-red-400 cursor-pointer";
           del.title = "Remove track";
-          del.textContent = "×";
+          del.textContent = "Ã—";
           del.addEventListener("click", (e) => {
             e.stopPropagation();
             playTactileFeedback("del");
@@ -2882,10 +3208,13 @@
 
         // crossOrigin is required so the Web Audio visualizer can read remote audio
         audioElement.crossOrigin = "anonymous";
+        resetEngine();
         audioElement.src = t.url;
+        initAudioGraph(); // the buffer engine needs the graph to exist before it decodes
         audioElement.loop = isLooping;
-        speedApplied = NaN;
-        applySpeed(true); // make sure the new media element uses the knob's rate
+        // The knob's rate has to be written onto whatever plays next: playbackRate does
+        // not survive a new src, and on iOS defaultPlaybackRate is ignored entirely.
+        syncSpeedToEngine();
 
         pendingSeek = time > 0 ? time : null;
         peakMax = 0;
@@ -2904,16 +3233,48 @@
         renderTracklist();
         saveState();
 
-        if (play && isDeviceOn) {
-          initAudioGraph();
-          audioElement.play().catch(() => {});
-        }
+        const shouldPlay = play && isDeviceOn;
+        // Try the in-graph engine first; if it declines (too large to decode) the media
+        // element is already primed and plays exactly as before.
+        selectEngineFor(
+          t.url,
+          () => (pendingSeek != null ? pendingSeek : time),
+          shouldPlay,
+        ).then((usedBuffer) => {
+          if (usedBuffer) return;
+          if (shouldPlay) audioElement.play().catch(() => {});
+        });
       }
+
+      function syncLoop() {
+        audioElement.loop = isLooping;
+        if (bufferSource) bufferSource.loop = isLooping;
+      }
+
+      // Write the knob's rate onto whatever is about to play. Called when a track is
+      // selected because audioElement.playbackRate does not survive a new src, and on iOS
+      // defaultPlaybackRate is ignored entirely.
+      function syncSpeedToEngine() {
+        speedApplied = NaN;
+        applySpeedNow(Math.round(speedFromN(speedN) * 1000) / 1000);
+        if (engineMode !== "buffer") forceElementRate();
+      }
+
+      function applyPendingSeek() {
+        if (pendingSeek == null) return;
+        const d = player.duration;
+        const target = Math.min(pendingSeek, Math.max(0, (d || 0) - 0.1));
+        player.currentTime = target;
+        pendingSeek = null;
+        timeCurrent.textContent = formatTime(target);
+      }
+
 
       function clearCurrent() {
         currentIndex = -1;
         pendingSeek = null;
-        audioElement.pause();
+        player.pause();
+        resetEngine();
         audioElement.removeAttribute("src");
         audioElement.load();
         if (currentUrl) URL.revokeObjectURL(currentUrl);
@@ -2927,7 +3288,7 @@
 
       function nextTrack() {
         if (!tracks.length) return flashStatus("STATUS: NO MEDIA");
-        const wasPlaying = !audioElement.paused;
+        const wasPlaying = !player.paused;
         let idx;
         if (isShuffle && tracks.length > 1) {
           do idx = Math.floor(Math.random() * tracks.length);
@@ -2940,10 +3301,10 @@
 
       function prevTrack() {
         if (!tracks.length) return flashStatus("STATUS: NO MEDIA");
-        const wasPlaying = !audioElement.paused;
+        const wasPlaying = !player.paused;
         // Standard behavior: restart the track first, go back if near start
-        if (audioElement.currentTime > 3) {
-          audioElement.currentTime = 0;
+        if (player.currentTime > 3) {
+          player.currentTime = 0;
           return;
         }
         const idx = (currentIndex - 1 + tracks.length) % tracks.length;
@@ -2962,7 +3323,7 @@
         dbDeletePeaks(t.id).catch(() => {});
         peakCache.delete(t.id);
         const wasCurrent = index === currentIndex;
-        const wasPlaying = !audioElement.paused;
+        const wasPlaying = !player.paused;
         tracks.splice(index, 1);
         if (wasCurrent) {
           if (!tracks.length) clearCurrent();
@@ -3103,8 +3464,52 @@
         renderTracklist();
         saveState();
       });
+      // The buffer engine has no media element events, so it raises the same ones.
+      player.one("play", () => {
+        updatePlayStateUI(true);
+        renderTracklist();
+      });
+      player.one("pause", () => {
+        updatePlayStateUI(false);
+        renderTracklist();
+        saveState();
+      });
+      player.one("timeupdate", () => {
+        const d = player.duration;
+        if (!d || !isFinite(d) || pendingSeek != null || scrubbing) return;
+        timeCurrent.textContent = formatTime(player.currentTime);
+        if (Date.now() - lastSave > 1000) {
+          lastSave = Date.now();
+          saveState();
+        }
+      });
+      player.one("loadedmetadata", () => {
+        const d = player.duration;
+        if (isFinite(d) && d > 0) {
+          timeDuration.textContent = formatTime(d);
+          const t = tracks[currentIndex];
+          if (t && !t.duration) {
+            t.duration = d;
+            renderTracklist();
+          }
+        }
+        applyPendingSeek();
+      });
+      player.one("ended", () => {
+        const isLast = currentIndex === tracks.length - 1;
+        if (tracks.length > 1 && (isShuffle || !isLast)) {
+          // selectTrack already autoplays the next track on whichever engine it picks;
+          // calling play() here as well would start the element and the decoded buffer
+          // at the same time on iOS.
+          nextTrack();
+        } else {
+          player.currentTime = 0;
+          timeCurrent.textContent = "00:00";
+        }
+      });
 
       audioElement.addEventListener("loadedmetadata", () => {
+        if (engineMode === "buffer") return; // the buffer engine reports its own duration
         const d = audioElement.duration;
         if (isFinite(d) && d > 0) {
           timeDuration.textContent = formatTime(d);
@@ -3114,15 +3519,11 @@
             renderTracklist();
           }
         }
-        if (pendingSeek != null) {
-          const target = Math.min(pendingSeek, Math.max(0, (d || 0) - 0.1));
-          audioElement.currentTime = target;
-          pendingSeek = null;
-          timeCurrent.textContent = formatTime(target);
-        }
+        applyPendingSeek();
       });
 
       audioElement.addEventListener("timeupdate", () => {
+        if (engineMode === "buffer") return; // driven by engineTick instead
         const d = audioElement.duration;
         if (!d || !isFinite(d) || pendingSeek != null || scrubbing) return;
         timeCurrent.textContent = formatTime(audioElement.currentTime);
@@ -3133,11 +3534,11 @@
       });
 
       audioElement.addEventListener("ended", () => {
+        if (engineMode === "buffer") return; // the buffer engine raises its own "ended"
         // Repeat-one is handled natively via audioElement.loop
         const isLast = currentIndex === tracks.length - 1;
         if (tracks.length > 1 && (isShuffle || !isLast)) {
-          nextTrack();
-          audioElement.play().catch(() => {});
+          nextTrack(); // selectTrack autoplays the next track on the chosen engine
         } else {
           audioElement.currentTime = 0;
           timeCurrent.textContent = "00:00";
@@ -3155,8 +3556,8 @@
         if (!tracks.length) return flashStatus("STATUS: NO MEDIA");
         initAudioGraph();
         if (currentIndex < 0) return selectTrack(0, { play: true });
-        if (audioElement.paused) audioElement.play().catch(() => {});
-        else audioElement.pause();
+        if (player.paused) player.play().catch(() => {});
+        else player.pause();
       });
 
       // File upload (multiple files supported)
@@ -3193,7 +3594,7 @@
       btnLoop.addEventListener("click", () => {
         playTactileFeedback("click");
         isLooping = !isLooping;
-        audioElement.loop = isLooping;
+        syncLoop();
         btnLoop.classList.toggle("active-state", isLooping);
         flashStatus(isLooping ? "MODE: REPEAT ON" : "MODE: REPEAT OFF");
         saveState();
@@ -3249,15 +3650,15 @@
             () => screenContainer.classList.remove("crt-turn-on"),
             400,
           );
-          if (resumeAfterPowerOn && audioElement.getAttribute("src")) {
-            audioElement.play().catch(() => {});
+          if (resumeAfterPowerOn && player.getAttribute("src")) {
+            player.play().catch(() => {});
           }
           resumeAfterPowerOn = false;
-          updatePlayStateUI(!audioElement.paused);
+          updatePlayStateUI(!player.paused);
         } else {
-          resumeAfterPowerOn = !audioElement.paused;
+          resumeAfterPowerOn = !player.paused;
           screenContainer.classList.add("crt-off");
-          audioElement.pause();
+          player.pause();
           closeModals();
           updatePlayStateUI(false);
         }
@@ -3494,11 +3895,12 @@
         audioElement.mozPreservesPitch = PRESERVE_PITCH;
         audioElement.webkitPreservesPitch = PRESERVE_PITCH;
         applyVolume();
-        applySpeed();
+        initAudioGraph();
+        syncSpeedToEngine(); // establish the knob's rate so the readout matches from the start
         applyFilter();
         setVizMode(vizMode, false);
         updateKnobUI();
-        audioElement.loop = isLooping;
+        syncLoop();
         btnShuffle.classList.toggle("active-state", isShuffle);
         btnLoop.classList.toggle("active-state", isLooping);
         if (!isDeviceOn) screenContainer.classList.add("crt-off");
