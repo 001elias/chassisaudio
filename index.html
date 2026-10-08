@@ -3,10 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
       name="viewport"
     />
     <title>CYBERDECK AP-96 AUDIO TERMINAL</title>
+    <!--
+      Fullscreen on mobile. A browser tab can never hide its own toolbar; only these
+      two routes can. On Android/desktop the Fullscreen API does it directly. On
+      iPhone Safari the API is unavailable for non-video elements, so the app gets
+      web-app-capable metadata and runs chrome-free once added to the Home Screen.
+    -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AP-96" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="apple-touch-icon" href="chassis.png" />
     <!-- Tailwind CSS v3 -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <!-- Phosphor Icons for High-Tech UI Symbols -->
@@ -186,6 +199,44 @@
           rgba(0, 0, 0, 0.35) 68%,
           rgba(0, 0, 0, 0.75) 100%
         );
+      }
+
+      /* Fullscreen toggle: a hardware-ish tab in the corner, not part of the deck.
+         Once the browser chrome is gone there is nothing left to escape, so it fades. */
+      .fs-toggle {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 8px);
+        right: calc(env(safe-area-inset-right, 0px) + 8px);
+        z-index: 70;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border: 1px solid rgba(255, 152, 36, 0.35);
+        border-radius: 3px;
+        background: rgba(10, 12, 15, 0.72);
+        color: rgba(255, 172, 70, 0.9);
+        font-size: 17px;
+        line-height: 1;
+        cursor: pointer;
+        -webkit-backdrop-filter: blur(3px);
+        backdrop-filter: blur(3px);
+        transition: opacity 0.25s ease, border-color 0.2s ease, color 0.2s ease;
+      }
+      .fs-toggle:hover,
+      .fs-toggle:active {
+        border-color: rgba(255, 152, 36, 0.7);
+        color: #ffb347;
+      }
+      /* Chrome gone: hide the control, but keep it reachable on hover so a mouse
+         user on desktop is never trapped in fullscreen. */
+      .fs-chromeless .fs-toggle {
+        opacity: 0.12;
+      }
+      .fs-chromeless .fs-toggle:hover,
+      .fs-chromeless .fs-toggle:focus-visible {
+        opacity: 1;
       }
 
       /* Pure black reads as a digital void; a little grain reads as photographed
@@ -409,6 +460,17 @@
     </div>
     <!-- Floor haze: stops the backdrop reading as infinite void -->
     <div class="scene-floor"></div>
+    <!-- Fullscreen toggle. Hidden until the script decides it can do something useful
+         on this device (see initFullscreen). -->
+    <button
+      class="fs-toggle hidden"
+      id="fs-toggle"
+      type="button"
+      aria-label="Toggle fullscreen"
+      title="Fullscreen"
+    >
+      <i class="ph ph-arrows-out" id="fs-icon"></i>
+    </button>
     <!-- MAIN VIEWPORT RIG CONTAINER: Matches chassis.png aspect ratio (1053x1920) -->
     <main
       class="relative shrink-0 w-[420px] aspect-[1053/1920] flex items-center justify-center z-10"
@@ -1212,6 +1274,8 @@
       const tracklistTotal = $("tracklist-total");
       const closeTracklist = $("close-tracklist");
       const btnClearAll = $("btn-clear-all");
+      const fsToggle = $("fs-toggle");
+      const fsIcon = $("fs-icon");
 
       // =======================================================================
       // HELPERS
@@ -2259,9 +2323,15 @@
       }
 
       function applyScale() {
+        // innerHeight is unreliable while a mobile URL bar is collapsing/expanding, and
+        // in fullscreen it is the only stable source. Prefer the visual viewport when the
+        // browser exposes it, and fall back to innerHeight.
+        const vv = window.visualViewport;
+        const vh = vv && vv.height ? vv.height : window.innerHeight;
+        const vw = vv && vv.width ? vv.width : window.innerWidth;
         const s = Math.min(
-          (window.innerHeight * FILL) / DESIGN_H,
-          (window.innerWidth * FILL) / DESIGN_W,
+          (vh * FILL) / DESIGN_H,
+          (vw * FILL) / DESIGN_W,
           MAX_SCALE,
         );
         rigRoot.style.transform = `scale(${s})`;
@@ -4018,6 +4088,105 @@
       });
       window.addEventListener("pagehide", saveState);
 
+      // =======================================================================
+      // FULLSCREEN
+      // A browser tab cannot hide its own toolbar. Two things can:
+      //   1. the Fullscreen API (Android, desktop, iPad) - handled here;
+      //   2. installing to the Home Screen, which runs the app with no chrome at all
+      //      (the only option on iPhone Safari, where the API is unavailable for
+      //      anything except a <video>).
+      // So on iPhone this offers the install route instead of pretending to work.
+      // =======================================================================
+      function fsElement() {
+        return document.fullscreenElement || document.webkitFullscreenElement || null;
+      }
+      function fsSupported() {
+        const el = document.documentElement;
+        return !!(el.requestFullscreen || el.webkitRequestFullscreen);
+      }
+      const IS_IOS_DEVICE =
+        /iP(hone|ad|od)/.test(navigator.platform) ||
+        (/Mac/.test(navigator.platform) && "ontouchend" in document);
+      const IS_STANDALONE =
+        (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches) ||
+        (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+        window.navigator.standalone === true;
+
+      function updateFsUi() {
+        const active = !!fsElement() || IS_STANDALONE;
+        document.body.classList.toggle("fs-chromeless", active);
+        if (fsIcon) {
+          // Fullscreen active -> offer the way back out.
+          fsIcon.className = active ? "ph ph-arrows-in" : "ph ph-arrows-out";
+        }
+        if (fsToggle) {
+          fsToggle.title = IS_IOS_DEVICE && !fsSupported() ? "Add to Home Screen" : "Fullscreen";
+        }
+        applyScale(); // the usable viewport just changed
+      }
+
+      async function enterFullscreen() {
+        const el = document.documentElement;
+        try {
+          if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: "hide" });
+          else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        } catch (e) {
+          // Some browsers reject without a gesture or for policy reasons; leave the
+          // button visible so the user can simply try again.
+          flashStatus("FULLSCREEN BLOCKED", 1800);
+        }
+      }
+
+      async function exitFullscreen() {
+        try {
+          if (document.exitFullscreen) await document.exitFullscreen();
+          else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        } catch (e) {}
+      }
+
+      function initFullscreen() {
+        if (!fsToggle) return;
+        const standalone = IS_STANDALONE;
+        const canApi = fsSupported();
+
+        if (standalone) {
+          // Already chrome-free: nothing to offer, so stay out of the way.
+          fsToggle.classList.add("hidden");
+        } else if (!canApi && IS_IOS_DEVICE) {
+          // iPhone Safari: no API exists, so teach the only route that does work.
+          fsToggle.classList.remove("hidden");
+          fsToggle.addEventListener("click", showFullscreenHint);
+        } else if (canApi) {
+          fsToggle.classList.remove("hidden");
+          fsToggle.addEventListener("click", toggleFullscreen);
+        } else {
+          // Desktop Safari and anything else without the API: keep it hidden rather
+          // than showing a control that cannot work.
+          fsToggle.classList.add("hidden");
+        }
+
+        for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) {
+          document.addEventListener(ev, updateFsUi);
+        }
+        // Rotating a phone or the Safari toolbar collapsing both change usable height.
+        window.addEventListener("orientationchange", () => setTimeout(updateFsUi, 250));
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener("resize", applyScale);
+        }
+        updateFsUi();
+      }
+
+      function showFullscreenHint() {
+        playTactileFeedback("beep");
+        flashStatus("SHARE > ADD TO HOME SCREEN", 4200);
+      }
+
+      function toggleFullscreen() {
+        playTactileFeedback("click");
+        if (fsElement()) exitFullscreen();
+        else enterFullscreen();
+      }
+
       // Keep canvases sharp and un-stretched when layout / scale changes
       window.addEventListener("resize", applyScale);
       window.addEventListener("load", applyScale);
@@ -4040,6 +4209,7 @@
         ro.observe(waveCanvas);
       }
       applyScale();
+      initFullscreen();
 
       // =======================================================================
       // BOOT: restore saved session (library + settings), start empty otherwise
