@@ -1787,9 +1787,13 @@
           audioBuffer = pcm;
           bufferDuration = pcm.duration;
           bufferSrcUrl = url;
-          engineMode = "buffer";
           bufferLoading = false;
-          setMasterVol(masterVol); // element goes silent, level moves into the graph
+          // iOS routes playback through the graph, because the media element's
+          // playbackRate is unreliable there. Everywhere else the element keeps playing
+          // and this decode only exists so the granular engine has PCM to slice - so the
+          // playback engine must NOT be switched, or playback would go silent/duplicate.
+          engineMode = BUFFER_ENGINE ? "buffer" : "element";
+          if (engineMode === "buffer") setMasterVol(masterVol); // element silent, level in graph
 
           // Read the position at completion, not at request time, so a scrub or a
           // restored offset that happened during the decode is still honoured.
@@ -1802,7 +1806,9 @@
           if (t && isFinite(pcm.duration)) t.duration = pcm.duration;
           firePlayer("loadedmetadata");
 
-          if (autoplay) enginePlay();
+          // Only the graph-routed engine starts a source here. On the element path the
+          // decode was purely for granular, and play() stays the caller's job.
+          if (autoplay && engineMode === "buffer") enginePlay();
           return true;
         } catch (e) {
           bufferLoading = false;
@@ -1838,10 +1844,11 @@
         }
       }
 
-      // Switch engines for a newly selected track. Returns a promise that resolves to
-      // true only when the buffer engine took over; otherwise the element keeps playing.
+      // Decode the track so granular has PCM to read. On iOS this also switches playback
+      // into the graph (that is the whole point of the buffer engine there); elsewhere it
+      // is a pure side-decode and playback stays on the media element.
       function selectEngineFor(url, positionFn, autoplay) {
-        if (!BUFFER_ENGINE || !audioCtx || !graphIn) return Promise.resolve(false);
+        if (!audioCtx || !graphIn) return Promise.resolve(false);
         const token = ++bufferToken;
         if (bufferSrcUrl !== url) {
           audioBuffer = null;
@@ -2045,7 +2052,12 @@
 
       function granularEnter() {
         if (!audioBuffer || !audioCtx) {
-          flashStatus("GRANULAR NEEDS A DECODED TRACK", 2600);
+          // Distinguish "still decoding" from "cannot decode" - the old wording blamed
+          // the file, which sent at least one person looking for a broken track.
+          flashStatus(
+            bufferLoading ? "GRANULAR: STILL DECODING, TRY AGAIN" : "GRANULAR: NO DECODED AUDIO",
+            2600,
+          );
           return false;
         }
         initAudioGraph(); // idempotent; makes sure graphIn exists to connect the bus to
@@ -3779,9 +3791,12 @@
           t.url,
           () => (pendingSeek != null ? pendingSeek : time),
           shouldPlay,
-        ).then((usedBuffer) => {
-          if (usedBuffer) return;
-          if (shouldPlay) audioElement.play().catch(() => {});
+        ).then((decoded) => {
+          // On the element path playback must not wait on a decode that only exists for
+          // granular, so start it now; if the decode later claims the engine (iOS only)
+          // the early play() has already been superseded by the graph source.
+          if (shouldPlay && !BUFFER_ENGINE) audioElement.play().catch(() => {});
+          if (decoded && !BUFFER_ENGINE) return; // side-decode finished: nothing to start
         });
       }
 
