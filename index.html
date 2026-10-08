@@ -4104,66 +4104,79 @@
         const el = document.documentElement;
         return !!(el.requestFullscreen || el.webkitRequestFullscreen);
       }
+      // IMPORTANT: modern iPhone Safari reports navigator.platform as "MacIntel" (it
+      // masquerades as a Mac), so platform alone cannot identify iOS. Touch points are
+      // the reliable signal.
       const IS_IOS_DEVICE =
         /iP(hone|ad|od)/.test(navigator.platform) ||
+        (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1) ||
         (/Mac/.test(navigator.platform) && "ontouchend" in document);
       const IS_STANDALONE =
         (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches) ||
         (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
         window.navigator.standalone === true;
 
-      function updateFsUi() {
-        const active = !!fsElement() || IS_STANDALONE;
-        document.body.classList.toggle("fs-chromeless", active);
-        if (fsIcon) {
-          // Fullscreen active -> offer the way back out.
-          fsIcon.className = active ? "ph ph-arrows-in" : "ph ph-arrows-out";
+      // Best-effort attempt at real fullscreen across engines. Resolves true only once
+      // the browser has actually entered it, so callers can fall back instead of doing
+      // nothing. The transition is asynchronous, so this must not check state inline.
+      async function tryEnterFullscreen() {
+        const el = document.documentElement;
+        try {
+          if (el.requestFullscreen) {
+            await el.requestFullscreen({ navigationUI: "hide" });
+            return true;
+          }
+          if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+          else if (el.webkitRequestFullScreen) el.webkitRequestFullScreen();
+          else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+          else if (el.msRequestFullscreen) el.msRequestFullscreen();
+          else return false;
+        } catch (e) {
+          return false;
         }
-        if (fsToggle) {
-          fsToggle.title = IS_IOS_DEVICE && !fsSupported() ? "Add to Home Screen" : "Fullscreen";
+        // Prefixed calls return nothing: give the change event a moment to land.
+        for (let i = 0; i < 12; i++) {
+          if (fsElement()) return true;
+          await new Promise((r) => setTimeout(r, 25));
         }
-        applyScale(); // the usable viewport just changed
+        return !!fsElement();
       }
 
       async function enterFullscreen() {
-        const el = document.documentElement;
-        try {
-          if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: "hide" });
-          else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-        } catch (e) {
-          // Some browsers reject without a gesture or for policy reasons; leave the
-          // button visible so the user can simply try again.
-          flashStatus("FULLSCREEN BLOCKED", 1800);
-        }
+        if (await tryEnterFullscreen()) return;
+        showFullscreenHint();
       }
 
       async function exitFullscreen() {
         try {
           if (document.exitFullscreen) await document.exitFullscreen();
           else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+          else if (document.msExitFullscreen) document.msExitFullscreen();
         } catch (e) {}
       }
 
       function initFullscreen() {
         if (!fsToggle) return;
-        const standalone = IS_STANDALONE;
         const canApi = fsSupported();
 
-        if (standalone) {
+        if (IS_STANDALONE) {
           // Already chrome-free: nothing to offer, so stay out of the way.
           fsToggle.classList.add("hidden");
-        } else if (!canApi && IS_IOS_DEVICE) {
-          // iPhone Safari: no API exists, so teach the only route that does work.
-          fsToggle.classList.remove("hidden");
-          fsToggle.addEventListener("click", showFullscreenHint);
-        } else if (canApi) {
-          fsToggle.classList.remove("hidden");
-          fsToggle.addEventListener("click", toggleFullscreen);
         } else {
-          // Desktop Safari and anything else without the API: keep it hidden rather
-          // than showing a control that cannot work.
-          fsToggle.classList.add("hidden");
+          // Always keep the control reachable. Hiding it whenever the API looks absent
+          // is what made this silently do nothing on iPhone.
+          fsToggle.classList.remove("hidden");
+          fsToggle.addEventListener("click", () => {
+            try {
+              toggleFullscreen();
+            } catch (e) {
+              // Never fail silently: an exception here would look like a dead button.
+              flashStatus("FULLSCREEN UNAVAILABLE", 2600);
+            }
+          });
         }
+
+        fsToggle.title = canApi ? "Fullscreen" : "Fullscreen (see how)";
 
         for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) {
           document.addEventListener(ev, updateFsUi);
@@ -4176,15 +4189,31 @@
         updateFsUi();
       }
 
-      function showFullscreenHint() {
-        playTactileFeedback("beep");
-        flashStatus("SHARE > ADD TO HOME SCREEN", 4200);
+      function updateFsUi() {
+        const active = !!fsElement() || IS_STANDALONE;
+        document.body.classList.toggle("fs-chromeless", active);
+        if (fsIcon) {
+          // Fullscreen active -> offer the way back out.
+          fsIcon.className = active ? "ph ph-arrows-in" : "ph ph-arrows-out";
+        }
+        if (fsToggle) fsToggle.title = fsSupported() ? "Fullscreen" : "Fullscreen (see how)";
+        applyScale(); // the usable viewport just changed
       }
 
-      function toggleFullscreen() {
+      function showFullscreenHint() {
+        playTactileFeedback("beep");
+        // Point at whichever route can actually work on this device, rather than
+        // implying the button failed.
+        flashStatus(
+          IS_IOS_DEVICE ? "SHARE > ADD TO HOME SCREEN" : "BROWSER BLOCKED FULLSCREEN",
+          4200,
+        );
+      }
+
+      async function toggleFullscreen() {
         playTactileFeedback("click");
-        if (fsElement()) exitFullscreen();
-        else enterFullscreen();
+        if (fsElement()) await exitFullscreen();
+        else await enterFullscreen();
       }
 
       // Keep canvases sharp and un-stretched when layout / scale changes
