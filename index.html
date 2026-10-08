@@ -229,6 +229,13 @@
         border-color: rgba(255, 152, 36, 0.7);
         color: #ffb347;
       }
+      /* Momentary confirmation that the tap registered, even when the browser refuses
+         to enter fullscreen (iPhone Safari). Without this a tap looks like a dead button. */
+      .fs-toggle.fs-armed {
+        border-color: rgba(255, 152, 36, 0.95);
+        color: #ffc46b;
+        box-shadow: 0 0 12px rgba(255, 152, 36, 0.45);
+      }
       /* Chrome gone: hide the control, but keep it reachable on hover so a mouse
          user on desktop is never trapped in fullscreen. */
       .fs-chromeless .fs-toggle {
@@ -4117,29 +4124,47 @@
         window.navigator.standalone === true;
 
       // Best-effort attempt at real fullscreen across engines. Resolves true only once
-      // the browser has actually entered it, so callers can fall back instead of doing
-      // nothing. The transition is asynchronous, so this must not check state inline.
+      // the browser has actually entered it. This MUST be time-bounded: Safari on iOS
+      // exposes requestFullscreen but only has partial support, so it can return a
+      // promise that never settles and never changes document.fullscreenElement.
+      // Without a deadline the caller waits forever and the tap appears to do nothing.
+      function waitForFsChange(ms) {
+        return new Promise((resolve) => {
+          let settled = false;
+          const done = (v) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            document.removeEventListener("fullscreenchange", onChange);
+            document.removeEventListener("webkitfullscreenchange", onChange);
+            resolve(v);
+          };
+          const onChange = () => done(!!fsElement());
+          document.addEventListener("fullscreenchange", onChange);
+          document.addEventListener("webkitfullscreenchange", onChange);
+          const timer = setTimeout(() => done(!!fsElement()), ms);
+        });
+      }
+
       async function tryEnterFullscreen() {
+        if (fsElement()) return true;
         const el = document.documentElement;
         try {
           if (el.requestFullscreen) {
-            await el.requestFullscreen({ navigationUI: "hide" });
-            return true;
+            // Do not await the returned promise alone: it may never settle on iOS.
+            const p = el.requestFullscreen({ navigationUI: "hide" });
+            if (p && typeof p.catch === "function") p.catch(() => {});
+            return await waitForFsChange(900);
           }
           if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
           else if (el.webkitRequestFullScreen) el.webkitRequestFullScreen();
           else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
           else if (el.msRequestFullscreen) el.msRequestFullscreen();
           else return false;
+          return await waitForFsChange(900);
         } catch (e) {
           return false;
         }
-        // Prefixed calls return nothing: give the change event a moment to land.
-        for (let i = 0; i < 12; i++) {
-          if (fsElement()) return true;
-          await new Promise((r) => setTimeout(r, 25));
-        }
-        return !!fsElement();
       }
 
       async function enterFullscreen() {
@@ -4155,31 +4180,49 @@
         } catch (e) {}
       }
 
+      // Embedded (in-app browser, iframe) fullscreen is usually refused outright.
+      const IS_EMBEDDED = (() => {
+        try {
+          return window.self !== window.top;
+        } catch (e) {
+          return true; // cross-origin ancestor => definitely framed
+        }
+      })();
+
+      function armFsButton(ms) {
+        if (!fsToggle) return;
+        fsToggle.classList.add("fs-armed");
+        clearTimeout(armFsButton._t);
+        armFsButton._t = setTimeout(() => fsToggle.classList.remove("fs-armed"), ms || 700);
+      }
+
       function initFullscreen() {
         if (!fsToggle) return;
-        const canApi = fsSupported();
 
         if (IS_STANDALONE) {
           // Already chrome-free: nothing to offer, so stay out of the way.
           fsToggle.classList.add("hidden");
         } else {
-          // Always keep the control reachable. Hiding it whenever the API looks absent
+          // Always keep the control reachable. Hiding it whenever the API looked absent
           // is what made this silently do nothing on iPhone.
           fsToggle.classList.remove("hidden");
           fsToggle.addEventListener("click", () => {
+            armFsButton(800); // immediate confirmation that the tap landed
             try {
               toggleFullscreen();
             } catch (e) {
               // Never fail silently: an exception here would look like a dead button.
-              flashStatus("FULLSCREEN UNAVAILABLE", 2600);
+              showFullscreenHint();
             }
           });
         }
 
-        fsToggle.title = canApi ? "Fullscreen" : "Fullscreen (see how)";
-
         for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) {
           document.addEventListener(ev, updateFsUi);
+        }
+        // A refused request should explain itself rather than appear to do nothing.
+        for (const ev of ["fullscreenerror", "webkitfullscreenerror"]) {
+          document.addEventListener(ev, () => showFullscreenHint());
         }
         // Rotating a phone or the Safari toolbar collapsing both change usable height.
         window.addEventListener("orientationchange", () => setTimeout(updateFsUi, 250));
@@ -4196,18 +4239,21 @@
           // Fullscreen active -> offer the way back out.
           fsIcon.className = active ? "ph ph-arrows-in" : "ph ph-arrows-out";
         }
-        if (fsToggle) fsToggle.title = fsSupported() ? "Fullscreen" : "Fullscreen (see how)";
+        if (fsToggle) {
+          fsToggle.title = IS_IOS_DEVICE ? "Fullscreen (Add to Home Screen)" : "Fullscreen";
+        }
         applyScale(); // the usable viewport just changed
       }
 
       function showFullscreenHint() {
         playTactileFeedback("beep");
-        // Point at whichever route can actually work on this device, rather than
-        // implying the button failed.
-        flashStatus(
-          IS_IOS_DEVICE ? "SHARE > ADD TO HOME SCREEN" : "BROWSER BLOCKED FULLSCREEN",
-          4200,
-        );
+        // Name the route that can actually work here, rather than implying the button
+        // failed. On iPhone the Fullscreen API is only partially implemented, so the
+        // Home Screen install is the one thing that genuinely removes the toolbar.
+        let msg = "BROWSER BLOCKED FULLSCREEN";
+        if (IS_IOS_DEVICE) msg = "SHARE > ADD TO HOME SCREEN";
+        else if (IS_EMBEDDED) msg = "OPEN IN A FULL BROWSER TAB";
+        flashStatus(msg, 4600);
       }
 
       async function toggleFullscreen() {
