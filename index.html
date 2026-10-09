@@ -239,6 +239,68 @@
         box-shadow: 0 0 5px rgba(255, 152, 36, 0.7);
       }
 
+      /* Granular LFO strip: [LFO][SHAPE] rate depth readout */
+      .gran-lfo {
+        display: grid;
+        grid-template-columns: auto auto 1fr 1fr auto;
+        align-items: center;
+        gap: 4px;
+        margin-top: 2px;
+      }
+      .gran-lfo.off .gran-slider {
+        opacity: 0.4;
+      }
+      .gran-mini {
+        font-size: 6px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        line-height: 1.2;
+        min-width: 20px;
+        padding: 1px 3px;
+        border: 1px solid #3f3f46;
+        border-radius: 2px;
+        background: transparent;
+        color: #a1a1aa;
+        cursor: pointer;
+      }
+      .gran-mini.on {
+        color: #ff9824;
+        border-color: rgba(255, 152, 36, 0.8);
+        background: rgba(255, 152, 36, 0.1);
+      }
+      .gran-lfo-read {
+        min-width: 44px;
+        text-align: right;
+        font-size: 6px;
+        color: #a1a1aa;
+        font-variant-numeric: tabular-nums;
+      }
+      .gran-lfo .gran-slider::-webkit-slider-thumb {
+        width: 5px;
+        height: 9px;
+        margin-top: -3px;
+        background: #e4e4e7;
+        box-shadow: none;
+      }
+      .gran-lfo .gran-slider::-moz-range-thumb {
+        width: 5px;
+        height: 9px;
+        background: #e4e4e7;
+        box-shadow: none;
+      }
+      /* Where the parameter really is right now (knob + LFO), riding on the slider */
+      .gran-mod {
+        position: absolute;
+        top: -1px;
+        width: 2px;
+        height: 12px;
+        margin-left: -1px;
+        border-radius: 1px;
+        background: #ffffff;
+        box-shadow: 0 0 5px #ffffff;
+        pointer-events: none;
+      }
+
       /* Pure black reads as a digital void; a little grain reads as photographed
          space. Kept cheap: one small tiled SVG noise, no runtime cost. */
       .scene-grain {
@@ -854,7 +916,7 @@
             <button
               class="tactile-btn rounded px-1.5 py-0.5 flex items-center gap-1 border border-zinc-700/60 hover:border-white/60 transition text-[7.5px] uppercase font-bold text-zinc-300"
               id="btn-granular"
-              title="Granular mode — freeze the sound into an ambient cloud"
+              title="Granular mode — a live grain cloud over the playing track"
             >
               <i class="ph-bold ph-wave-sine text-white text-[9px]"></i>
               <span>GRAN</span>
@@ -1196,6 +1258,7 @@
       let mediaSourceNode = null;
       let biquadFilter = null;
       let graphIn = null; // single node every playback engine feeds, so the chain never changes
+      let dryBus = null; // the playing track on its way to graphIn; ducked while the cloud is live
       let eqNodes = null;
       let freqData = null;
       let timeData = null;
@@ -1463,6 +1526,25 @@
               reverbSpace,
               eqSel,
               viz: vizMode,
+              grain: {
+                pos: grainPosN,
+                win: grainWindowN,
+                size: grainSizeN,
+                dens: grainDensN,
+                pitch: grainPitchN,
+                mix: grainMixN,
+                lfo: Object.fromEntries(
+                  GRAIN_LFO_IDS.map((id) => [
+                    id,
+                    {
+                      on: grainLfo[id].on,
+                      shape: grainLfo[id].shape,
+                      rateN: grainLfo[id].rateN,
+                      depthN: grainLfo[id].depthN,
+                    },
+                  ]),
+                ),
+              },
             }),
           );
         } catch (e) {}
@@ -1752,6 +1834,9 @@
           graphIn = audioCtx.createGain();
           graphIn.gain.value = 1;
           graphIn.connect(biquadFilter);
+          dryBus = audioCtx.createGain();
+          dryBus.gain.value = 1;
+          dryBus.connect(graphIn);
 
           driveGain = audioCtx.createGain();
           driveGain.gain.value = DRIVE_GAIN;
@@ -1785,7 +1870,7 @@
 
           try {
             mediaSourceNode = audioCtx.createMediaElementSource(audioElement);
-            mediaSourceNode.connect(graphIn);
+            mediaSourceNode.connect(dryBus);
           } catch (e) {}
 
           computeBandBins();
@@ -1837,7 +1922,7 @@
         src.loop = !!isLooping;
         src.playbackRate.value = exactRate;
         const off = clamp(offset, 0, Math.max(0, bufferDuration - 0.001));
-        src.connect(graphIn);
+        src.connect(dryBus);
         src.start(0, off);
         bufferSource = src;
         sourceOffset = off;
@@ -1982,17 +2067,22 @@
       }
 
       // =======================================================================
-      // GRANULAR ENGINE
-      // Granular mode freezes the playback head and rebuilds the sound out of many
-      // short, windowed grains read from a small window of the decoded buffer. Because
-      // grains are plain AudioBufferSourceNodes with a gain envelope, their pitch is
-      // whatever the playback rate says (pitch follows rate, as everywhere else in this
-      // deck), and the cloud can sustain a note indefinitely.
+      // GRANULAR ENGINE (live)
+      // The track keeps playing. While GRAN is on, a cloud of short, windowed grains is
+      // read from a window of the decoded buffer that FOLLOWS THE PLAYHEAD, and is
+      // crossfaded against the dry track (CLOUD MIX). So the effect is applied to the
+      // music as it plays: nothing is paused, restarted or swapped for another file.
+      // FREEZE pins the window where it is for the old "ambient hold" sound.
       //
-      //   grainBus -> filter -> EQ -> drive -> analyser -> master -> out
+      // Grains are plain AudioBufferSourceNodes with a gain envelope, so their pitch is
+      // whatever the playback rate says. Every parameter is read at each grain's own
+      // start time, which is what lets the per-knob LFOs move the sound grain by grain.
       //
-      // Grains bypass the reverb SEND on purpose: hundreds of grains through a convolver
-      // is both expensive and muddy.
+      //   track  -> dryBus  -\
+      //                       >- graphIn -> filter -> EQ -> drive -> analyser -> master
+      //   grains -> grainBus -/
+      //
+      // Grains also get a small send into the reverb, same as before.
       // =======================================================================
       const GRAIN_VOICES = 48; // pool size; also the concurrency ceiling
       const GRAIN_SIZE_MIN = 0.02; // 20 ms
@@ -2005,7 +2095,7 @@
       const GRAIN_WINDOW_MAX = 30; // wide enough to pull unrelated material together
       let GRAIN_SEMITONES = 12; // grain pitch range, +/- (one octave)
 
-      let grainActive = false; // is the cloud running?
+      let grainActive = false; // is GRAN switched on?
       let grainVoices = [];
       let grainBus = null;
       let grainReverbSend = null; // grains -> reverb bus (dry still goes straight through)
@@ -2013,13 +2103,16 @@
       let grainNextTime = 0; // audioCtx time the next grain is due
       let grainSizeN = 0.4; // knob 0..1 -> grain duration
       let grainDensN = 0.5; // knob 0..1 -> grains per second
-      let grainPosN = 0.5; // knob 0..1 -> read position inside the window
+      let grainPosN = 0.5; // knob 0..1 -> read position inside the window (0.5 = "now")
       let grainPitchN = 0.5; // knob 0..1 -> grain pitch, 0.5 = unison
       let grainDriftN = 0.35; // per-grain scatter; the source of the ambient movement
       let grainWindowN = 0.55; // knob 0..1 -> window length (log between min and max)
-      let grainWindowStart = 0;
-      let grainWindowLen = GRAIN_WINDOW_DEFAULT;
-      let grainWindowCenter = 0; // kept stable while the length is adjusted
+      let grainMixN = 0.8; // 0 = dry track only, 1 = cloud only (equal-power crossfade)
+      let grainFreeze = false; // true: the window stops following the playhead
+      let grainFrozenAt = 0; // playhead position the window is pinned to while frozen
+      let grainStopToken = 0; // lets a quick re-arm cancel a pending soft stop
+      let grainDryApplied = NaN;
+      let grainWetApplied = NaN;
 
       const grainWindowFromN = (n) =>
         GRAIN_WINDOW_MIN *
@@ -2031,11 +2124,90 @@
         GRAIN_DENS_MIN * Math.pow(GRAIN_DENS_MAX / GRAIN_DENS_MIN, clamp(n, 0, 1));
       const grainPitchFromN = (n) => ((n - 0.5) * 2 * GRAIN_SEMITONES); // semitones
 
+      // ---- LFOs: one per granular knob ------------------------------------
+      // Each LFO adds depth * wave * 0.5 to its knob's 0..1 value, so depth 100% sweeps
+      // the whole travel of the knob when it sits in the middle. The wave is read at
+      // each grain's start time on the audio clock, so it is sample-accurate in time and
+      // keeps its phase when the rate is changed.
+      const GRAIN_LFO_IDS = ["gpos", "gwin", "gsize", "gdens", "gpitch"];
+      const LFO_SHAPES = ["SIN", "TRI", "SQR", "SAW", "S&H"];
+      const LFO_RATE_MIN = 0.05; // Hz
+      const LFO_RATE_MAX = 20; // Hz
+      const lfoRateFromN = (n) =>
+        LFO_RATE_MIN * Math.pow(LFO_RATE_MAX / LFO_RATE_MIN, clamp(n, 0, 1));
+      const grainLfo = {};
+      for (const id of GRAIN_LFO_IDS) {
+        grainLfo[id] = {
+          on: false,
+          shape: 0,
+          rateN: 0.45, // ~0.7 Hz
+          depthN: 0.35,
+          cycles: 0, // accumulated phase, in cycles, at tRef
+          tRef: 0, // audio-clock time `cycles` was last brought up to date
+          seed: Math.random() * 1000, // makes each S&H LFO a different sequence
+        };
+      }
+
+      function lfoWave(shape, cyc, seed) {
+        const ph = cyc - Math.floor(cyc);
+        switch (shape) {
+          case 1: // triangle
+            return ph < 0.5 ? 4 * ph - 1 : 3 - 4 * ph;
+          case 2: // square
+            return ph < 0.5 ? 1 : -1;
+          case 3: // saw
+            return 2 * ph - 1;
+          case 4: {
+            // sample & hold: a new random value every cycle
+            const x = Math.sin((Math.floor(cyc) + seed) * 127.1) * 43758.5453;
+            return (x - Math.floor(x)) * 2 - 1;
+          }
+          default: // sine
+            return Math.sin(2 * Math.PI * ph);
+        }
+      }
+
+      function lfoCycles(l, t) {
+        if (!l.tRef) return l.cycles;
+        return l.cycles + Math.max(0, t - l.tRef) * lfoRateFromN(l.rateN);
+      }
+
+      // Bring the phase up to date. Call this BEFORE changing the rate and once per
+      // frame (keeps the numbers small).
+      function lfoSync(l, t) {
+        if (!l.tRef) {
+          l.tRef = t;
+          return;
+        }
+        l.cycles = lfoCycles(l, t);
+        l.tRef = t;
+      }
+
+      const grainBaseN = (id) =>
+        id === "gpos"
+          ? grainPosN
+          : id === "gwin"
+            ? grainWindowN
+            : id === "gsize"
+              ? grainSizeN
+              : id === "gdens"
+                ? grainDensN
+                : grainPitchN;
+
+      // The knob value after its LFO, at audio-clock time t.
+      function grainEffN(id, t) {
+        const base = grainBaseN(id);
+        const l = grainLfo[id];
+        if (!l || !l.on || !(l.depthN > 0)) return base;
+        if (!l.tRef) l.tRef = t;
+        return clamp(base + l.depthN * 0.5 * lfoWave(l.shape, lfoCycles(l, t), l.seed), 0, 1);
+      }
+
       function grainEnsureBus() {
         if (!audioCtx || !graphIn) return false;
         if (!grainBus) {
           grainBus = audioCtx.createGain();
-          grainBus.gain.value = masterVol;
+          grainBus.gain.value = 0;
           // Dry path: straight into the chain, so grains get filter + EQ + drive.
           grainBus.connect(graphIn);
           // Wet path: a conservative send for the same reverb the rest of the deck uses.
@@ -2061,6 +2233,45 @@
         return true;
       }
 
+      // ---- Levels ---------------------------------------------------------
+      // Element engine: the track's level is the element's own volume and the graph sits
+      // at unity, so the cloud must carry masterVol itself. Buffer engine (iOS): the level
+      // lives in masterGain, so the cloud runs at unity. Either way cloud and track end up
+      // at the same overall volume, with CLOUD MIX deciding the balance.
+      const grainBusLevel = () => (engineMode === "buffer" ? 1 : masterVol);
+
+      // Is the cloud producing sound right now? It follows the transport (play/pause)
+      // unless FREEZE is on, in which case it sustains even while paused.
+      const grainCloudLive = () =>
+        grainActive && !!audioBuffer && (grainFreeze || !player.paused);
+
+      function grainApplyLevels(force = false) {
+        if (!audioCtx || !grainBus || !dryBus) return;
+        const mixing = grainActive && grainCloudLive();
+        const dry = mixing ? Math.cos((grainMixN * Math.PI) / 2) : 1;
+        const wet = grainActive ? Math.sin((grainMixN * Math.PI) / 2) * grainBusLevel() : 0;
+        const t = audioCtx.currentTime;
+        // ~60 ms time constant: a smooth crossfade rather than a click
+        if (force || !(Math.abs(dry - grainDryApplied) < 1e-3)) {
+          try {
+            dryBus.gain.cancelScheduledValues(t);
+            dryBus.gain.setTargetAtTime(dry, t, 0.06);
+          } catch (e) {
+            dryBus.gain.value = dry;
+          }
+          grainDryApplied = dry;
+        }
+        if (force || !(Math.abs(wet - grainWetApplied) < 1e-3)) {
+          try {
+            grainBus.gain.cancelScheduledValues(t);
+            grainBus.gain.setTargetAtTime(wet, t, 0.06);
+          } catch (e) {
+            grainBus.gain.value = wet;
+          }
+          grainWetApplied = wet;
+        }
+      }
+
       // One grain: a slice of the buffer, loudest in the middle, played once.
       //
       // Level: a Hann-windowed grain contributes 3/8 of its peak as mean power, and with
@@ -2070,10 +2281,10 @@
       // next to normal playback. The 0.5 coefficient targets RMS ~0.3 (about the same as
       // the track itself); the cap keeps a single sparse grain from jumping out, and with
       // this coefficient it never binds, so the compensation stays exact.
-      function grainFire(voice, at, offset, dur, rate) {
+      function grainFire(voice, at, offset, dur, rate, dens) {
         if (!audioBuffer) return;
         const fade = Math.min(dur * 0.45, 0.12);
-        const overlap = Math.max(1, grainDensFromN(grainDensN) * dur);
+        const overlap = Math.max(1, dens * dur);
         const peak = Math.min(0.85, 0.5 / Math.sqrt(overlap));
         const v = voice;
         try {
@@ -2096,41 +2307,16 @@
         }
       }
 
-      // Schedule every grain that begins inside the look-ahead window. Called once per
-      // frame, so knob changes take effect within a frame or two.
-      function grainSched(now) {
-        if (!grainActive || !audioBuffer || !audioCtx) return;
-        const horizon = audioCtx.currentTime + GRAIN_LOOKAHEAD;
-        // If the tab was suspended or the clock jumped, do not try to catch up: that
-        // would dump a burst of overlapping grains all at once.
-        if (!(grainNextTime > 0) || grainNextTime < audioCtx.currentTime - 0.2) {
-          grainNextTime = audioCtx.currentTime + 0.02;
-        }
-        const dur = grainSizeFromN(grainSizeN);
-        const rate = Math.pow(2, grainPitchFromN(grainPitchN) / 12);
-        const maxOffset = Math.max(0, grainWindowLen - dur * rate - 0.02);
-        let guard = 0;
-        while (grainNextTime < horizon && guard++ < 64) {
-          const at = grainNextTime;
-          const voice = grainPickVoice(at);
-          if (!voice) {
-            grainNextTime = at + 0.05; // pool exhausted: back off rather than drop the cloud
-            break;
-          }
-          // Position inside the window, with scatter so successive grains are not
-          // phase-identical. This is what makes the texture move instead of buzz.
-          const head = clamp(grainPosN, 0, 1) * maxOffset;
-          const scatter =
-            grainDriftN * grainWindowLen * 0.5 * (grainVoiceRand() * 2 - 1);
-          let offset = head + scatter;
-          offset = ((offset % maxOffset) + maxOffset) % maxOffset;
-          offset = clamp(grainWindowStart + offset, 0, Math.max(0, bufferDuration - 0.01));
-          const jitter = 1 + (grainVoiceRand() * 2 - 1) * 0.006 * grainDriftN;
-          grainFire(voice, at, offset, dur, rate * jitter);
-          // Density is a rate per second, so the interval is its reciprocal.
-          grainNextTime = at + 1 / grainDensFromN(grainDensN);
-        }
-        // Retire finished voices so they can be reused.
+      // Where in the track the window is centred for a grain that starts at audio time
+      // `at`: the live playhead (projected forward to `at`), or the pinned spot if frozen.
+      function grainPlayhead(at) {
+        if (grainFreeze) return grainFrozenAt;
+        const base = player.currentTime || 0;
+        const ahead = player.paused ? 0 : Math.max(0, at - audioCtx.currentTime) * exactRate;
+        return clamp(base + ahead, 0, bufferDuration || 0);
+      }
+
+      function grainRetire() {
         for (const v of grainVoices) {
           if (v.src && v.until > 0 && v.until < audioCtx.currentTime) {
             try {
@@ -2140,6 +2326,64 @@
             v.until = 0;
           }
         }
+      }
+
+      // Schedule every grain that begins inside the look-ahead window. Called once per
+      // frame, so knob changes take effect within a frame or two.
+      function grainSched(now) {
+        if (!grainActive || !audioBuffer || !audioCtx) return;
+        const t0 = audioCtx.currentTime;
+        lfoSyncAll(t0);
+        grainApplyLevels();
+        if (!grainCloudLive() || grainMixN < 0.01) {
+          grainNextTime = 0; // restart cleanly (no catch-up burst) when it goes live again
+          grainRetire();
+          return;
+        }
+        const horizon = t0 + GRAIN_LOOKAHEAD;
+        // If the tab was suspended or the clock jumped, do not try to catch up: that
+        // would dump a burst of overlapping grains all at once.
+        if (!(grainNextTime > 0) || grainNextTime < t0 - 0.2) {
+          grainNextTime = t0 + 0.02;
+        }
+        let guard = 0;
+        while (grainNextTime < horizon && guard++ < 64) {
+          const at = grainNextTime;
+          const voice = grainPickVoice(at);
+          if (!voice) {
+            grainNextTime = at + 0.05; // pool exhausted: back off rather than drop the cloud
+            break;
+          }
+          // Every parameter at this grain's own start time, so the LFOs move per grain.
+          const dur = grainSizeFromN(grainEffN("gsize", at));
+          const dens = grainDensFromN(grainEffN("gdens", at));
+          const rate = Math.pow(2, grainPitchFromN(grainEffN("gpitch", at)) / 12);
+          const winLen = Math.min(
+            grainWindowFromN(grainEffN("gwin", at)),
+            Math.max(0.5, bufferDuration),
+          );
+          const maxOffset = Math.max(0, winLen - dur * rate - 0.02);
+          // The window is centred on the playhead and clamped inside the buffer.
+          const centre = grainPlayhead(at);
+          const start = clamp(centre - winLen / 2, 0, Math.max(0, bufferDuration - winLen));
+          // Position inside the window (0.5 = right at the playhead), with scatter so
+          // successive grains are not phase-identical. That is what makes the texture
+          // move instead of buzz.
+          const head = clamp(grainEffN("gpos", at), 0, 1) * maxOffset;
+          const scatter = grainDriftN * winLen * 0.5 * (grainVoiceRand() * 2 - 1);
+          let offset = head + scatter;
+          offset = maxOffset > 0 ? ((offset % maxOffset) + maxOffset) % maxOffset : 0;
+          offset = clamp(start + offset, 0, Math.max(0, bufferDuration - 0.01));
+          const jitter = 1 + (grainVoiceRand() * 2 - 1) * 0.006 * grainDriftN;
+          grainFire(voice, at, offset, dur, rate * jitter, dens);
+          // Density is a rate per second, so the interval is its reciprocal.
+          grainNextTime = at + 1 / dens;
+        }
+        grainRetire();
+      }
+
+      function lfoSyncAll(t) {
+        for (const id of GRAIN_LFO_IDS) lfoSync(grainLfo[id], t);
       }
 
       // Deterministic-enough scatter; Math.random is fine here and avoids extra state.
@@ -2159,27 +2403,18 @@
         return grainActive;
       }
 
-      // Length comes from the GWIN knob; the centre is remembered separately so adjusting
-      // the length keeps reading the same passage instead of jumping somewhere else.
-      function grainWindowUpdate() {
-        const total = bufferDuration || 0;
-        const len = Math.min(grainWindowFromN(grainWindowN), Math.max(0.5, total));
-        grainWindowLen = len;
-        const half = len / 2;
-        // Near the edges the window cannot be centred, so clamp into the buffer and let
-        // the centre follow; otherwise the read head would sit outside the window.
-        const start = clamp(grainWindowCenter - half, 0, Math.max(0, total - len));
-        grainWindowStart = start;
-        grainWindowCenter = start + half;
-      }
+      // The window is derived per grain from the live playhead now, so there is no
+      // window state to maintain; kept so the knob setter can still call it.
+      function grainWindowUpdate() {}
 
-      // The instrument reads a window of the source centred on wherever the playhead was.
-      function grainResetWindow(centerSeconds) {
-        grainWindowCenter = centerSeconds || 0;
-        grainWindowUpdate();
+      function setGrainFreeze(on) {
+        on = !!on;
+        if (on === grainFreeze) return;
+        if (on) grainFrozenAt = clamp(player.currentTime || 0, 0, bufferDuration || 0);
+        grainFreeze = on;
+        grainApplyLevels(true);
+        if (grainActive) flashStatus(on ? "GRANULAR: WINDOW FROZEN" : "GRANULAR: FOLLOWING TRACK", 1800);
       }
-
-      let grainResumeElement = false; // the element was playing when the cloud took over
 
       function granularEnter() {
         if (!audioBuffer || !audioCtx) {
@@ -2193,43 +2428,36 @@
         }
         initAudioGraph(); // idempotent; makes sure graphIn exists to connect the bus to
         if (!grainEnsureBus()) return false;
-        const at = engineMode === "buffer" ? enginePosNow() : audioElement.currentTime || 0;
-        // Stop BOTH transports. stopBufferSource() only covers the graph path; on desktop
-        // playback runs through the media element, and leaving it rolling played the track
-        // underneath the cloud.
-        grainResumeElement = !audioElement.paused;
-        stopBufferSource();
-        if (grainResumeElement) audioElement.pause();
-        grainResetWindow(at);
+        // Deliberately NOT touching the transport: the track keeps playing and the cloud
+        // is laid over it. (Earlier versions paused the track here.)
+        grainStopToken++; // cancels a soft stop still pending from a quick off/on
+        grainFreeze = false;
+        grainFrozenAt = clamp(player.currentTime || 0, 0, bufferDuration || 0);
         grainActive = true;
-        grainNextTime = audioCtx.currentTime + 0.03;
-        grainBus.gain.setValueAtTime(masterVol, audioCtx.currentTime);
+        grainNextTime = 0;
+        grainApplyLevels(true);
         setKnobMode("gpos");
-        flashStatus("GRANULAR: ENGINE ARMED", 2200);
-        updatePlayStateUI(true);
+        flashStatus(player.paused ? "GRANULAR: ARMED, PRESS PLAY" : "GRANULAR: LIVE ON TRACK", 2200);
         return true;
       }
 
+      // Turn GRAN off without touching the transport: the cloud fades out and the dry
+      // track fades back in, then the leftover voices are stopped.
       function granularExit() {
-        const resume = grainResumeElement;
-        grainResumeElement = false;
-        grainStop();
+        grainActive = false;
+        grainFreeze = false;
+        const token = ++grainStopToken;
+        grainApplyLevels(true);
+        setTimeout(() => {
+          if (token === grainStopToken) grainKillVoices();
+        }, 450);
         // Own the whole teardown, including the knob tab strip: leaving that to each
         // caller is how the granular tabs ended up lingering after a track switch.
         if (GRAIN_KNOB_MODES.includes(knobMode)) setKnobMode("filter", false);
-        // Hand playback back to the transport only if the cloud interrupted it.
-        if (resume) {
-          if (engineMode === "buffer") enginePlay();
-          else if (isDeviceOn) audioElement.play().catch(() => {});
-        } else {
-          updatePlayStateUI(false);
-        }
         flashStatus("GRANULAR: OFF", 1600);
       }
 
-      function grainStop() {
-        if (!grainActive && !grainVoices.length) return;
-        grainActive = false;
+      function grainKillVoices() {
         for (const v of grainVoices) {
           try {
             if (v.src) v.src.stop();
@@ -2240,7 +2468,31 @@
           v.src = null;
           v.until = 0;
         }
-        if (grainBus && audioCtx) grainBus.gain.setValueAtTime(0, audioCtx.currentTime);
+      }
+
+      // Immediate teardown (track change, engine reset): nothing to fade, the source
+      // buffer is about to disappear.
+      function grainStop() {
+        if (!grainActive && !grainVoices.length) return;
+        grainActive = false;
+        grainFreeze = false;
+        grainStopToken++;
+        grainKillVoices();
+        if (audioCtx) {
+          const t = audioCtx.currentTime;
+          try {
+            if (grainBus) {
+              grainBus.gain.cancelScheduledValues(t);
+              grainBus.gain.setValueAtTime(0, t);
+            }
+            if (dryBus) {
+              dryBus.gain.cancelScheduledValues(t);
+              dryBus.gain.setValueAtTime(1, t);
+            }
+          } catch (e) {}
+        }
+        grainDryApplied = NaN;
+        grainWetApplied = NaN;
       }
 
       // FFT bin range for each of the 7 bands (edges tile the spectrum)
@@ -2428,9 +2680,9 @@
         try {
           audioElement.volume = engineMode === "buffer" ? 0 : masterVol;
         } catch (e) {}
-        // In granular mode the cloud carries the level, and grainBus already sits above
-        // masterGain in the chain, so masterGain stays at unity or the two would multiply.
-        const graphVol = engineMode === "buffer" || grainActive ? masterVol : 1;
+        // Element engine: the element carries the level and the graph stays at unity (the
+        // cloud takes masterVol itself, see grainBusLevel). Buffer engine: masterGain does.
+        const graphVol = engineMode === "buffer" ? masterVol : 1;
         if (masterGain && audioCtx) {
           try {
             masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
@@ -2439,13 +2691,7 @@
             masterGain.gain.value = graphVol;
           }
         }
-        if (grainBus && audioCtx) {
-          try {
-            grainBus.gain.setTargetAtTime(masterVol, audioCtx.currentTime, 0.015);
-          } catch (e) {
-            grainBus.gain.value = masterVol;
-          }
-        }
+        grainApplyLevels(true); // cloud level follows volume (and the engine in use)
       }
 
       // Ducked only by the element-engine fallback, to hide the AVPlayer flush that
@@ -2657,10 +2903,13 @@
               ? "OFF"
               : `${REVERB_SPACES[reverbSpace].name === "CATHEDRAL" ? "CATH" : REVERB_SPACES[reverbSpace].name} ${Math.round(reverbN * 100)}%`;
           case "gpos": {
-            // Read as an offset into the window, which is what it actually controls.
+            // Where the grains read relative to the playhead: the window is centred on
+            // "now", so the middle of the knob is the music as it plays, left of it is
+            // the past and right of it is the near future.
             const winLen = grainWindowFromN(grainWindowN);
-            const head = grainPosN * Math.max(0, winLen - grainSizeFromN(grainSizeN));
-            return `${head.toFixed(1)}s / ${winLen.toFixed(0)}s`;
+            const maxOff = Math.max(0, winLen - grainSizeFromN(grainSizeN));
+            const rel = (grainPosN - 0.5) * maxOff;
+            return Math.abs(rel) < 0.05 ? "PLAYHEAD" : `${rel > 0 ? "+" : ""}${rel.toFixed(1)}s`;
           }
           case "gwin":
             // Report the knob's target, not grainWindowLen: that one is clamped to the
@@ -2686,7 +2935,9 @@
         // 270 degree sweep: -135 (min) .. +135 (max), 12 o'clock = centre
         knobDot.style.transform = `rotate(${-135 + getKnobN() * 270}deg) translateY(-14px)`;
         knobModeLabel.textContent = `KNOB // ${KNOB_NAMES[knobMode]}`;
-        knobReadout.textContent = knobReadoutText();
+        knobReadout.textContent =
+          knobReadoutText() +
+          (GRAIN_LFO_IDS.includes(knobMode) && grainLfo[knobMode].on ? " ~" : "");
         knobTabs.forEach((t) =>
           t.classList.toggle("on", t.dataset.mode === knobMode),
         );
@@ -3823,7 +4074,7 @@
 
           const marker = document.createElement("span");
           marker.className = "w-2 shrink-0 text-white";
-          marker.textContent = isCurrent ? (isPlaying ? "Ã¢â€“Â¶" : "Ã¢â€“Â®") : "";
+          marker.textContent = isCurrent ? (isPlaying ? "\u25B6" : "\u25AE") : "";
 
           const name = document.createElement("span");
           name.className = "truncate flex-1 uppercase";
@@ -3837,7 +4088,7 @@
           del.className =
             "shrink-0 px-1 text-zinc-500 hover:text-red-400 cursor-pointer";
           del.title = "Remove track";
-          del.textContent = "Ãƒâ€”";
+          del.textContent = "\u00D7";
           del.addEventListener("click", (e) => {
             e.stopPropagation();
             playTactileFeedback("del");
@@ -3871,11 +4122,27 @@
       // the same setter the physical knob already uses.
       // =======================================================================
       const GRAIN_PAGE_SPEC = [
-        { id: "gpos", label: "POSITION", read: () => knobReadoutTextFor("gpos") },
-        { id: "gwin", label: "WINDOW", read: () => knobReadoutTextFor("gwin") },
-        { id: "gsize", label: "GRAIN SIZE", read: () => knobReadoutTextFor("gsize") },
-        { id: "gdens", label: "DENSITY", read: () => knobReadoutTextFor("gdens") },
-        { id: "gpitch", label: "GRAIN PITCH", read: () => knobReadoutTextFor("gpitch") },
+        {
+          id: "gmix",
+          label: "CLOUD MIX (TRACK \u2194 CLOUD)",
+          read: () =>
+            grainMixN < 0.01
+              ? "TRACK ONLY"
+              : grainMixN > 0.99
+                ? "CLOUD ONLY"
+                : `${Math.round(grainMixN * 100)}% CLOUD`,
+          get: () => grainMixN,
+          set: (n) => {
+            grainMixN = clamp(n, 0, 1);
+            grainApplyLevels();
+            scheduleSave();
+          },
+        },
+        { id: "gpos", label: "POSITION", lfo: true, read: () => knobReadoutTextFor("gpos") },
+        { id: "gwin", label: "WINDOW", lfo: true, read: () => knobReadoutTextFor("gwin") },
+        { id: "gsize", label: "GRAIN SIZE", lfo: true, read: () => knobReadoutTextFor("gsize") },
+        { id: "gdens", label: "DENSITY", lfo: true, read: () => knobReadoutTextFor("gdens") },
+        { id: "gpitch", label: "GRAIN PITCH", lfo: true, read: () => knobReadoutTextFor("gpitch") },
         {
           id: "filter",
           label: "FILTER (LPF)",
@@ -3922,11 +4189,97 @@
         return s;
       }
 
+      let granFreezeBtn = null;
+      let granFreezeLabel = null;
+
+      function lfoMini(text) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "gran-mini";
+        b.textContent = text;
+        return b;
+      }
+
+      function lfoRange(value, title) {
+        const r = document.createElement("input");
+        r.type = "range";
+        r.min = "0";
+        r.max = "1";
+        r.step = "0.005";
+        r.className = "gran-slider";
+        r.title = title;
+        r.value = String(value);
+        return r;
+      }
+
+      const fmtLfoRate = (hz) => (hz < 1 ? `${hz.toFixed(2)}Hz` : `${hz.toFixed(1)}Hz`);
+
+      // [LFO] [SHAPE]  rate ----  depth ----  readout
+      function buildLfoControls(row, id) {
+        const l = grainLfo[id];
+        const line = document.createElement("div");
+        line.className = "gran-lfo off";
+        const on = lfoMini("LFO");
+        on.title = "Switch this knob's LFO on/off";
+        const shape = lfoMini(LFO_SHAPES[l.shape]);
+        shape.title = "LFO shape (tap to change)";
+        const rate = lfoRange(l.rateN, "LFO RATE");
+        const depth = lfoRange(l.depthN, "LFO DEPTH");
+        const read = document.createElement("span");
+        read.className = "gran-lfo-read";
+
+        on.addEventListener("click", () => {
+          playTactileFeedback("click");
+          l.on = !l.on;
+          if (audioCtx) lfoSync(l, audioCtx.currentTime);
+          renderGranularPage();
+          scheduleSave();
+        });
+        shape.addEventListener("click", () => {
+          playTactileFeedback("click");
+          l.shape = (l.shape + 1) % LFO_SHAPES.length;
+          renderGranularPage();
+          scheduleSave();
+        });
+        rate.addEventListener("input", () => {
+          // bring the phase up to date first, or changing the rate would jump the wave
+          if (audioCtx) lfoSync(l, audioCtx.currentTime);
+          l.rateN = parseFloat(rate.value);
+          renderGranularPage();
+          scheduleSave();
+        });
+        depth.addEventListener("input", () => {
+          l.depthN = parseFloat(depth.value);
+          renderGranularPage();
+          scheduleSave();
+        });
+
+        line.append(on, shape, rate, depth, read);
+        row.appendChild(line);
+        return { line, on, shape, rate, depth, read };
+      }
+
       function buildGranularPage() {
         const host = $("gran-controls");
         if (!host || host.dataset.built) return;
         host.dataset.built = "1";
         granularPageRows = [];
+
+        // FREEZE: stop the window from following the playhead
+        const fz = document.createElement("div");
+        fz.className = "flex items-center justify-between gap-1";
+        granFreezeLabel = document.createElement("span");
+        granFreezeLabel.className = "text-[7px] text-zinc-400";
+        granFreezeBtn = lfoMini("");
+        granFreezeBtn.style.minWidth = "46px";
+        granFreezeBtn.addEventListener("click", () => {
+          playTactileFeedback("click");
+          setGrainFreeze(!grainFreeze);
+          renderGranularPage();
+        });
+        fz.append(granFreezeLabel, granFreezeBtn);
+        host.appendChild(fz);
+
         for (const spec of GRAIN_PAGE_SPEC) {
           const row = document.createElement("div");
 
@@ -3939,6 +4292,8 @@
           head.appendChild(name);
           head.appendChild(val);
 
+          const wrap = document.createElement("div");
+          wrap.className = "relative";
           const input = document.createElement("input");
           input.type = "range";
           input.min = "0";
@@ -3953,11 +4308,21 @@
             else setKnobN(parseFloat(input.value), spec.id);
             renderGranularPage();
           });
+          wrap.appendChild(input);
+          // A thin marker that rides on the slider: where this parameter really is right
+          // now, LFO included.
+          let mod = null;
+          if (spec.lfo) {
+            mod = document.createElement("div");
+            mod.className = "gran-mod hidden";
+            wrap.appendChild(mod);
+          }
 
           row.appendChild(head);
-          row.appendChild(input);
+          row.appendChild(wrap);
+          const lfoUI = spec.lfo ? buildLfoControls(row, spec.id) : null;
           host.appendChild(row);
-          granularPageRows.push({ spec, input, val });
+          granularPageRows.push({ spec, input, val, mod, lfoUI });
         }
         buildReverbSpaceButtons();
       }
@@ -4002,18 +4367,51 @@
       // Cheap enough to run per frame, which is what keeps it honest while the knob moves.
       function renderGranularPage() {
         if (!granularPage || granularPage.classList.contains("hidden")) return;
+        const tNow = audioCtx ? audioCtx.currentTime : 0;
         for (const row of granularPageRows) {
           const want = row.spec.get ? row.spec.get() : getKnobN(row.spec.id);
           if (document.activeElement !== row.input) row.input.value = String(want);
           row.val.textContent = row.spec.read();
+          const u = row.lfoUI;
+          if (u) {
+            const l = grainLfo[row.spec.id];
+            u.on.classList.toggle("on", l.on);
+            u.shape.classList.toggle("on", l.on);
+            u.shape.textContent = LFO_SHAPES[l.shape];
+            u.line.classList.toggle("off", !l.on);
+            if (document.activeElement !== u.rate) u.rate.value = String(l.rateN);
+            if (document.activeElement !== u.depth) u.depth.value = String(l.depthN);
+            u.read.textContent = `${fmtLfoRate(lfoRateFromN(l.rateN))} ${Math.round(l.depthN * 100)}%`;
+            if (l.on && l.depthN > 0 && tNow) {
+              const eff = grainEffN(row.spec.id, tNow);
+              row.mod.classList.remove("hidden");
+              row.mod.style.left = `calc(${eff.toFixed(4)} * (100% - 9px) + 4.5px)`;
+            } else {
+              row.mod.classList.add("hidden");
+            }
+          }
         }
         const live = grainVoices.filter((v) => v.src).length;
         if (granMeter) granMeter.style.width = `${Math.round((live / GRAIN_VOICES) * 100)}%`;
         if (granVoicesEl) granVoicesEl.textContent = `${live}/${GRAIN_VOICES}`;
         paintReverbSpaceButtons();
         if (granRevName) granRevName.textContent = reverbSpaceName();
+        if (granFreezeBtn) {
+          granFreezeLabel.textContent = "WINDOW";
+          granFreezeBtn.textContent = grainFreeze ? "FROZEN" : "FOLLOWS";
+          granFreezeBtn.title = grainFreeze
+            ? "Window is pinned; tap to follow the playhead again"
+            : "Window follows the playhead; tap to pin it here";
+          granFreezeBtn.classList.toggle("on", grainFreeze);
+        }
         if (granLive) {
-          granLive.textContent = grainActive ? (isPlaying ? "[RUNNING]" : "[SUSPENDED]") : "[IDLE]";
+          granLive.textContent = !grainActive
+            ? "[IDLE]"
+            : !grainCloudLive()
+              ? "[ARMED]"
+              : grainFreeze
+                ? "[FROZEN]"
+                : "[LIVE]";
           granLive.className = grainActive
             ? "text-deck-amber font-normal"
             : "text-zinc-500 font-normal";
@@ -4432,24 +4830,8 @@
         if (!tracks.length) return flashStatus("STATUS: NO MEDIA");
         initAudioGraph();
         if (currentIndex < 0) return selectTrack(0, { play: true });
-        // In granular mode PLAY means resume/suspend the cloud rather than the transport:
-        // the source is frozen, so there is nothing for the element to play.
-        if (grainActive) {
-          grainActive = false;
-          if (isPlaying) {
-            grainStop();
-            updatePlayStateUI(false);
-            flashStatus("GRANULAR: SUSPENDED", 1800);
-          } else {
-            if (!grainEnsureBus()) return;
-            grainActive = true;
-            grainNextTime = audioCtx.currentTime + 0.03;
-            grainBus.gain.setValueAtTime(masterVol, audioCtx.currentTime);
-            updatePlayStateUI(true);
-            flashStatus("GRANULAR: RUNNING", 1800);
-          }
-          return;
-        }
+        // PLAY/PAUSE always drives the transport, also in granular mode: the cloud is
+        // laid over the playing track and follows it (or holds, if FREEZE is on).
         if (player.paused) player.play().catch(() => {});
         else player.pause();
       });
@@ -4814,6 +5196,28 @@
             reverbSpace = st.reverbSpace;
           if (KNOB_MODES.includes(st.knobMode)) knobMode = st.knobMode;
           if (VIZ_MODES.includes(st.viz)) vizMode = st.viz;
+          if (st.grain && typeof st.grain === "object") {
+            const g = st.grain;
+            const num = (v, d) => (typeof v === "number" && isFinite(v) ? clamp(v, 0, 1) : d);
+            grainPosN = num(g.pos, grainPosN);
+            grainWindowN = num(g.win, grainWindowN);
+            grainSizeN = num(g.size, grainSizeN);
+            grainDensN = num(g.dens, grainDensN);
+            grainPitchN = num(g.pitch, grainPitchN);
+            grainMixN = num(g.mix, grainMixN);
+            if (g.lfo && typeof g.lfo === "object") {
+              for (const id of GRAIN_LFO_IDS) {
+                const sv = g.lfo[id];
+                if (!sv || typeof sv !== "object") continue;
+                const l = grainLfo[id];
+                l.on = !!sv.on;
+                if (Number.isInteger(sv.shape) && sv.shape >= 0 && sv.shape < LFO_SHAPES.length)
+                  l.shape = sv.shape;
+                l.rateN = num(sv.rateN, l.rateN);
+                l.depthN = num(sv.depthN, l.depthN);
+              }
+            }
+          }
         }
         audioElement.preservesPitch = PRESERVE_PITCH;
         audioElement.mozPreservesPitch = PRESERVE_PITCH;
