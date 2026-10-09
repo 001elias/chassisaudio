@@ -201,6 +201,44 @@
         );
       }
 
+      /* Granular page sliders: thin hardware faders rather than default browser chrome. */
+      .gran-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 10px;
+        background: transparent;
+        cursor: pointer;
+      }
+      .gran-slider::-webkit-slider-runnable-track {
+        height: 3px;
+        background: #27272a;
+        border-radius: 2px;
+      }
+      .gran-slider::-moz-range-track {
+        height: 3px;
+        background: #27272a;
+        border-radius: 2px;
+      }
+      .gran-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 9px;
+        height: 13px;
+        margin-top: -5px;
+        border-radius: 1px;
+        background: #ff9824;
+        box-shadow: 0 0 5px rgba(255, 152, 36, 0.7);
+      }
+      .gran-slider::-moz-range-thumb {
+        width: 9px;
+        height: 13px;
+        border: 0;
+        border-radius: 1px;
+        background: #ff9824;
+        box-shadow: 0 0 5px rgba(255, 152, 36, 0.7);
+      }
+
       /* Pure black reads as a digital void; a little grain reads as photographed
          space. Kept cheap: one small tiled SVG noise, no runtime cost. */
       .scene-grain {
@@ -554,6 +592,56 @@
             <span class="cursor-pointer hover:text-red-400" id="btn-clear-all"
               >CLEAR ALL</span
             >
+          </div>
+        </div>
+        <!-- ========================================================================= -->
+        <!-- GRANULAR PAGE (opened by the GRAN button)                                   -->
+        <!-- Own instruments for the grain cloud, plus the same filter / EQ / reverb /   -->
+        <!-- level the deck uses, so the cloud can be shaped without leaving the page.   -->
+        <!-- ========================================================================= -->
+        <div
+          class="absolute inset-2 z-40 bg-[#070b0ef7] backdrop-blur-sm border border-white/40 rounded p-2 text-[8px] flex flex-col hidden"
+          id="granular-page"
+        >
+          <div
+            class="flex justify-between items-center border-b border-white/20 pb-1 text-white text-glow-cyan shrink-0"
+          >
+            <span class="font-bold flex items-center gap-1"
+              ><i class="ph-bold ph-wave-sine"></i> GRANULAR ENGINE<span
+                class="text-deck-amber font-normal"
+                id="gran-live"
+                >[IDLE]</span
+              ></span
+            >
+            <span
+              class="text-zinc-400 cursor-pointer hover:text-white"
+              id="close-granular"
+              >[ESC]</span
+            >
+          </div>
+          <!-- Grain activity meter: how many voices are sounding right now -->
+          <div class="flex items-center gap-1 pt-1 shrink-0">
+            <span class="text-[6.5px] text-zinc-500 w-8 shrink-0">GRAINS</span>
+            <div class="flex-1 h-1.5 bg-zinc-900 rounded-sm overflow-hidden">
+              <div
+                class="h-full bg-deck-amber/80 transition-[width] duration-75"
+                id="gran-meter"
+                style="width: 0%"
+              ></div>
+            </div>
+            <span class="text-[6.5px] text-zinc-400 w-8 text-right" id="gran-voices"
+              >0/48</span
+            >
+          </div>
+          <div
+            class="deck-scroll flex-1 min-h-0 overflow-y-auto py-1 space-y-1.5"
+            id="gran-controls"
+          ></div>
+          <div
+            class="border-t border-white/20 pt-1 text-[7px] text-zinc-500 flex justify-between shrink-0"
+          >
+            <span>GRAINS FEED FILTER + EQ + REVERB</span>
+            <span class="text-zinc-400">DRAG THE KNOB FOR FINE CONTROL</span>
           </div>
         </div>
         <!-- Screen Top Terminal Header -->
@@ -1253,6 +1341,13 @@
       const tracklistTotal = $("tracklist-total");
       const closeTracklist = $("close-tracklist");
       const btnClearAll = $("btn-clear-all");
+      const granularPage = $("granular-page");
+      const granControls = $("gran-controls");
+      const granMeter = $("gran-meter");
+      const granVoicesEl = $("gran-voices");
+      const granLive = $("gran-live");
+      const closeGranular = $("close-granular");
+      let granularPageRows = [];
 
       // =======================================================================
       // HELPERS
@@ -1900,6 +1995,8 @@
       let grainActive = false; // is the cloud running?
       let grainVoices = [];
       let grainBus = null;
+      let grainReverbSend = null; // grains -> reverb bus (dry still goes straight through)
+      const GRAIN_REVERB_SEND = 0.22; // a taste: the convolver is fed by many short grains
       let grainNextTime = 0; // audioCtx time the next grain is due
       let grainSizeN = 0.4; // knob 0..1 -> grain duration
       let grainDensN = 0.5; // knob 0..1 -> grains per second
@@ -1926,9 +2023,19 @@
         if (!grainBus) {
           grainBus = audioCtx.createGain();
           grainBus.gain.value = masterVol;
+          // Dry path: straight into the chain, so grains get filter + EQ + drive.
           grainBus.connect(graphIn);
-          // Grains are short: an analyser window of 2048 (~46 ms) is plenty, and the
-          // existing analyser already drives the bars, so nothing extra is needed.
+          // Wet path: a conservative send for the same reverb the rest of the deck uses.
+          // The convolver already runs for normal playback, so this adds no new nodes -
+          // only a second input into an existing one.
+          grainReverbSend = audioCtx.createGain();
+          grainReverbSend.gain.value = GRAIN_REVERB_SEND;
+          grainBus.connect(grainReverbSend);
+          if (reverbSend) {
+            try {
+              grainReverbSend.connect(reverbSend);
+            } catch (e) {}
+          }
         }
         if (!grainVoices.length) {
           for (let i = 0; i < GRAIN_VOICES; i++) {
@@ -1942,10 +2049,19 @@
       }
 
       // One grain: a slice of the buffer, loudest in the middle, played once.
+      //
+      // Level: a Hann-windowed grain contributes 3/8 of its peak as mean power, and with
+      // `density x duration` grains overlapping incoherently the cloud's RMS goes as
+      // peak * sqrt(overlap * 3/8). Dividing the peak by sqrt(overlap) therefore holds the
+      // loudness flat as SIZE/DENS move - which is what stops the cloud sounding dimmed
+      // next to normal playback. The 0.5 coefficient targets RMS ~0.3 (about the same as
+      // the track itself); the cap keeps a single sparse grain from jumping out, and with
+      // this coefficient it never binds, so the compensation stays exact.
       function grainFire(voice, at, offset, dur, rate) {
         if (!audioBuffer) return;
         const fade = Math.min(dur * 0.45, 0.12);
-        const peak = 0.26 / Math.sqrt(Math.max(1, grainDensFromN(grainDensN) * dur));
+        const overlap = Math.max(1, grainDensFromN(grainDensN) * dur);
+        const peak = Math.min(0.85, 0.5 / Math.sqrt(overlap));
         const v = voice;
         try {
           const src = audioCtx.createBufferSource();
@@ -2050,6 +2166,8 @@
         grainWindowUpdate();
       }
 
+      let grainResumeElement = false; // the element was playing when the cloud took over
+
       function granularEnter() {
         if (!audioBuffer || !audioCtx) {
           // Distinguish "still decoding" from "cannot decode" - the old wording blamed
@@ -2063,7 +2181,12 @@
         initAudioGraph(); // idempotent; makes sure graphIn exists to connect the bus to
         if (!grainEnsureBus()) return false;
         const at = engineMode === "buffer" ? enginePosNow() : audioElement.currentTime || 0;
-        stopBufferSource(); // the cloud replaces normal playback
+        // Stop BOTH transports. stopBufferSource() only covers the graph path; on desktop
+        // playback runs through the media element, and leaving it rolling played the track
+        // underneath the cloud.
+        grainResumeElement = !audioElement.paused;
+        stopBufferSource();
+        if (grainResumeElement) audioElement.pause();
         grainResetWindow(at);
         grainActive = true;
         grainNextTime = audioCtx.currentTime + 0.03;
@@ -2075,11 +2198,19 @@
       }
 
       function granularExit() {
+        const resume = grainResumeElement;
+        grainResumeElement = false;
         grainStop();
         // Own the whole teardown, including the knob tab strip: leaving that to each
         // caller is how the granular tabs ended up lingering after a track switch.
         if (GRAIN_KNOB_MODES.includes(knobMode)) setKnobMode("filter", false);
-        updatePlayStateUI(false);
+        // Hand playback back to the transport only if the cloud interrupted it.
+        if (resume) {
+          if (engineMode === "buffer") enginePlay();
+          else if (isDeviceOn) audioElement.play().catch(() => {});
+        } else {
+          updatePlayStateUI(false);
+        }
         flashStatus("GRANULAR: OFF", 1600);
       }
 
@@ -2504,11 +2635,14 @@
               : `${REVERB_SPACES[reverbSpace].name === "CATHEDRAL" ? "CATH" : REVERB_SPACES[reverbSpace].name} ${Math.round(reverbN * 100)}%`;
           case "gpos": {
             // Read as an offset into the window, which is what it actually controls.
-            const head = grainPosN * Math.max(0, grainWindowLen - grainSizeFromN(grainSizeN));
-            return `${head.toFixed(1)}s / ${grainWindowLen.toFixed(0)}s`;
+            const winLen = grainWindowFromN(grainWindowN);
+            const head = grainPosN * Math.max(0, winLen - grainSizeFromN(grainSizeN));
+            return `${head.toFixed(1)}s / ${winLen.toFixed(0)}s`;
           }
           case "gwin":
-            return `${grainWindowLen.toFixed(1)}s WINDOW`;
+            // Report the knob's target, not grainWindowLen: that one is clamped to the
+            // buffer, so the two disagreed on short tracks and near the window edges.
+            return `${grainWindowFromN(grainWindowN).toFixed(1)}s WINDOW`;
           case "gsize":
             return `${Math.round(grainSizeFromN(grainSizeN) * 1000)} ms`;
           case "gdens":
@@ -3563,6 +3697,7 @@
             grainSched(now);
           } catch (e) {}
         }
+        if (granularPage && !granularPage.classList.contains("hidden")) renderGranularPage();
 
         // Keep the mirrored copy mirrored; flipping the blur+crop once has no effect.
         if (rigReflectionEl) rigReflectionEl.style.transform = "scaleY(-1)";
@@ -3702,7 +3837,130 @@
       function closeModals() {
         sysDiagModal.classList.add("hidden");
         tracklistModal.classList.add("hidden");
+        if (granularPage) granularPage.classList.add("hidden");
         resetClearConfirm();
+      }
+
+      // =======================================================================
+      // GRANULAR PAGE
+      // The control surface for the cloud. Built from one spec so the markup is
+      // generated rather than hand-duplicated, and so every control routes through
+      // the same setter the physical knob already uses.
+      // =======================================================================
+      const GRAIN_PAGE_SPEC = [
+        { id: "gpos", label: "POSITION", read: () => knobReadoutTextFor("gpos") },
+        { id: "gwin", label: "WINDOW", read: () => knobReadoutTextFor("gwin") },
+        { id: "gsize", label: "GRAIN SIZE", read: () => knobReadoutTextFor("gsize") },
+        { id: "gdens", label: "DENSITY", read: () => knobReadoutTextFor("gdens") },
+        { id: "gpitch", label: "GRAIN PITCH", read: () => knobReadoutTextFor("gpitch") },
+        {
+          id: "filter",
+          label: "FILTER (LPF)",
+          // Filter is not a knob mode this page owns, so drive it directly.
+          read: () => (filterN >= 0.995 ? "OPEN" : `${fmtHz(filterHz(filterN))} Hz`),
+          get: () => filterN,
+          set: (n) => {
+            filterN = clamp(n, 0, 1);
+            applyFilter();
+          },
+        },
+        {
+          id: "reverb",
+          label: "REVERB WET",
+          read: () => `${Math.round(reverbN * 100)}% ${reverbSpaceName()}`,
+          get: () => reverbN,
+          set: (n) => {
+            reverbN = clamp(n, 0, 1);
+            initAudioGraph();
+            applyReverb();
+          },
+        },
+        {
+          id: "level",
+          label: "LEVEL",
+          read: () => `${Math.round(masterVol * 100)}%`,
+          get: () => masterVol,
+          set: (n) => {
+            volSlider.value = clamp(n, 0, 1).toFixed(2);
+            applyVolume();
+          },
+        },
+      ];
+
+      const reverbSpaceName = () => REVERB_SPACES[reverbSpace].name;
+
+      // A readout for any knob mode without switching the physical knob to it.
+      function knobReadoutTextFor(mode) {
+        const prev = knobMode;
+        knobMode = mode;
+        const s = knobReadoutText();
+        knobMode = prev;
+        return s;
+      }
+
+      function buildGranularPage() {
+        const host = $("gran-controls");
+        if (!host || host.dataset.built) return;
+        host.dataset.built = "1";
+        granularPageRows = [];
+        for (const spec of GRAIN_PAGE_SPEC) {
+          const row = document.createElement("div");
+
+          const head = document.createElement("div");
+          head.className = "flex justify-between text-[7px] text-zinc-400 mb-0.5";
+          const name = document.createElement("span");
+          name.textContent = spec.label;
+          const val = document.createElement("span");
+          val.className = "text-white text-glow-cyan font-bold";
+          head.appendChild(name);
+          head.appendChild(val);
+
+          const input = document.createElement("input");
+          input.type = "range";
+          input.min = "0";
+          input.max = "1";
+          input.step = "0.005";
+          input.className = "gran-slider";
+          input.value = String(spec.get ? spec.get() : getKnobN(spec.id));
+          // Sliders are 0..1, exactly like the knob, so a spec with its own setter still
+          // shares the knob's value scale.
+          input.addEventListener("input", () => {
+            if (spec.set) spec.set(parseFloat(input.value));
+            else setKnobN(parseFloat(input.value), spec.id);
+            renderGranularPage();
+          });
+
+          row.appendChild(head);
+          row.appendChild(input);
+          host.appendChild(row);
+          granularPageRows.push({ spec, input, val });
+        }
+      }
+
+      // Cheap enough to run per frame, which is what keeps it honest while the knob moves.
+      function renderGranularPage() {
+        if (!granularPage || granularPage.classList.contains("hidden")) return;
+        for (const row of granularPageRows) {
+          const want = row.spec.get ? row.spec.get() : getKnobN(row.spec.id);
+          if (document.activeElement !== row.input) row.input.value = String(want);
+          row.val.textContent = row.spec.read();
+        }
+        const live = grainVoices.filter((v) => v.src).length;
+        if (granMeter) granMeter.style.width = `${Math.round((live / GRAIN_VOICES) * 100)}%`;
+        if (granVoicesEl) granVoicesEl.textContent = `${live}/${GRAIN_VOICES}`;
+        if (granLive) {
+          granLive.textContent = grainActive ? (isPlaying ? "[RUNNING]" : "[SUSPENDED]") : "[IDLE]";
+          granLive.className = grainActive
+            ? "text-deck-amber font-normal"
+            : "text-zinc-500 font-normal";
+        }
+      }
+
+      function openGranularPage() {
+        buildGranularPage();
+        closeModals();
+        granularPage.classList.remove("hidden");
+        renderGranularPage();
       }
 
       function toggleTracklist() {
@@ -4132,20 +4390,31 @@
         else player.pause();
       });
 
-      // Granular mode: swap the transport for the grain cloud (and back)
+      // Granular mode: swap the transport for the grain cloud, then open its control page
       btnGranular.addEventListener("click", () => {
         playTactileFeedback("beep");
         if (grainActive) {
-          granularExit(); // restores the knob mode and tab strip itself
+          granularExit();
           btnGranular.classList.remove("active-state");
+          if (granularPage && !granularPage.classList.contains("hidden")) {
+            granularPage.classList.add("hidden");
+          }
           return;
         }
         if (!tracks.length) return flashStatus("STATUS: NO MEDIA");
         if (granularEnter()) {
           btnGranular.classList.add("active-state");
+          openGranularPage();
           scheduleSave();
         }
       });
+
+      if (closeGranular) {
+        closeGranular.addEventListener("click", () => {
+          playTactileFeedback("click");
+          closeModals();
+        });
+      }
 
       // File upload (multiple files supported)
       audioFileInput.addEventListener("change", async function () {
