@@ -637,6 +637,17 @@
             class="deck-scroll flex-1 min-h-0 overflow-y-auto py-1 space-y-1.5"
             id="gran-controls"
           ></div>
+          <!-- Reverb type: a discrete choice, so a segmented selector rather than a fader.
+               Options are generated from REVERB_SPACES so they cannot drift out of sync. -->
+          <div class="pt-1 border-t border-white/12 shrink-0">
+            <div class="flex justify-between text-[7px] text-zinc-400 mb-0.5">
+              <span>REVERB TYPE</span>
+              <span class="text-white text-glow-cyan font-bold" id="gran-rev-name"
+                >HALL</span
+              >
+            </div>
+            <div class="grid grid-cols-3 gap-1" id="gran-rev-spaces"></div>
+          </div>
           <div
             class="border-t border-white/20 pt-1 text-[7px] text-zinc-500 flex justify-between shrink-0"
           >
@@ -1346,8 +1357,10 @@
       const granMeter = $("gran-meter");
       const granVoicesEl = $("gran-voices");
       const granLive = $("gran-live");
+      const granRevName = $("gran-rev-name");
       const closeGranular = $("close-granular");
       let granularPageRows = [];
+      let granSpaceButtons = [];
 
       // =======================================================================
       // HELPERS
@@ -2370,12 +2383,22 @@
         }
       }
 
-      function cycleReverbSpace() {
-        reverbSpace = (reverbSpace + 1) % REVERB_SPACES.length;
+      // Rebuild the impulse responses for the currently selected space. Switching space is
+      // expensive (the IR is regenerated), so it is kept to discrete taps.
+      function setReverbSpace(idx) {
+        const n = REVERB_SPACES.length;
+        const next = ((idx % n) + n) % n;
+        if (next === reverbSpace) return;
+        reverbSpace = next;
         updateKnobUI();
+        renderGranularPage();
         initAudioGraph();
         ensureReverb(true);
         scheduleSave();
+      }
+
+      function cycleReverbSpace() {
+        setReverbSpace(reverbSpace + 1);
       }
 
       // =======================================================================
@@ -3888,6 +3911,7 @@
       ];
 
       const reverbSpaceName = () => REVERB_SPACES[reverbSpace].name;
+      const granularOpen = () => !!granularPage && !granularPage.classList.contains("hidden");
 
       // A readout for any knob mode without switching the physical knob to it.
       function knobReadoutTextFor(mode) {
@@ -3935,6 +3959,44 @@
           host.appendChild(row);
           granularPageRows.push({ spec, input, val });
         }
+        buildReverbSpaceButtons();
+      }
+
+      // REVERB_SPACES drives the buttons, so adding a space in one place is enough.
+      function buildReverbSpaceButtons() {
+        const host = $("gran-rev-spaces");
+        if (!host || host.dataset.built) return;
+        host.dataset.built = "1";
+        granSpaceButtons = [];
+        REVERB_SPACES.forEach((sp, i) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className =
+            "gran-space-btn text-[6.5px] font-bold uppercase tracking-wider py-1 rounded-sm " +
+            "border transition";
+          b.textContent = sp.name === "CATHEDRAL" ? "CATH" : sp.name;
+          b.title = `${sp.name} (RT60 ${sp.rt60}s)`;
+          b.addEventListener("click", () => {
+            playTactileFeedback("click");
+            setReverbSpace(i);
+          });
+          host.appendChild(b);
+          granSpaceButtons.push(b);
+        });
+      }
+
+      // Active/inactive styling is applied here rather than baked into the class list so it
+      // survives a re-render and stays consistent with the knob's REV mode.
+      function paintReverbSpaceButtons() {
+        for (let i = 0; i < granSpaceButtons.length; i++) {
+          const on = i === reverbSpace;
+          const b = granSpaceButtons[i];
+          b.className =
+            "gran-space-btn text-[6.5px] font-bold uppercase tracking-wider py-1 rounded-sm border transition " +
+            (on
+              ? "border-deck-amber/80 text-deck-amber bg-deck-amber/10"
+              : "border-zinc-700/70 text-zinc-400 hover:text-white hover:border-white/50");
+        }
       }
 
       // Cheap enough to run per frame, which is what keeps it honest while the knob moves.
@@ -3948,6 +4010,8 @@
         const live = grainVoices.filter((v) => v.src).length;
         if (granMeter) granMeter.style.width = `${Math.round((live / GRAIN_VOICES) * 100)}%`;
         if (granVoicesEl) granVoicesEl.textContent = `${live}/${GRAIN_VOICES}`;
+        paintReverbSpaceButtons();
+        if (granRevName) granRevName.textContent = reverbSpaceName();
         if (granLive) {
           granLive.textContent = grainActive ? (isPlaying ? "[RUNNING]" : "[SUSPENDED]") : "[IDLE]";
           granLive.className = grainActive
@@ -4662,8 +4726,12 @@
             lastKnobTap = now;
           }
         }
-        if (wasTap && knobMode === "reverb") {
+        // Reverb type is reachable from the knob in two ways: the deck's REV mode, or a
+        // tap while the granular page is open - the granular tabs have no REV mode of
+        // their own, so otherwise there would be no knob route to it while granulating.
+        if (wasTap && !(knobMode === "speed" && IS_IOS) && (knobMode === "reverb" || granularOpen())) {
           cycleReverbSpace();
+          flashStatus(`REVERB: ${reverbSpaceName()}`, 1400);
         } else if (wasTap && knobMode === "eq") {
           eqSel = (eqSel + 1) % NUM_BARS;
           updateKnobUI();
