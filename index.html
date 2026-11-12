@@ -2606,6 +2606,7 @@
         const cyc = lfoRateFromN(l.rateN) * t;
         return clamp(base + l.depthN * 0.5 * lfoWave(l.shape, cyc, l.seed), 0, 1);
       }
+      const GRAIN_CURVE = (() => { const n = 64, c = new Float32Array(n); for (let i = 0; i < n; i++) c[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)); return c; })();
       async function renderOffline(onProgress) {
         if (!audioBuffer) throw new Error("no decoded audio");
         const src = audioBuffer;
@@ -2686,21 +2687,23 @@
               const scatter = grainDriftN * gwin * 0.5 * (grainVoiceRand() * 2 - 1);
               let offset = head + scatter;
               offset = maxOffset > 0 ? ((offset % maxOffset) + maxOffset) % maxOffset : 0;
-              offset = clamp(start + offset, 0, Math.max(0, dur - 0.01));
               const jitter = 1 + (grainVoiceRand() * 2 - 1) * 0.006 * grainDriftN;
-              const fade = Math.min(gsize * 0.45, 0.12);
+              const rt = grat * jitter;
+              // start() duration is in buffer-time: grain needs (len * rate) of source, or pitched-up grains cut off mid-envelope (click)
+              const need = (gsize + 0.02) * rt;
+              offset = clamp(start + offset, 0, Math.max(0, dur - need - 0.005));
               const overlap = Math.max(1, gdens * gsize);
               const peak = Math.min(0.85, 0.5 / Math.sqrt(overlap));
               const g = oc.createBufferSource();
               g.buffer = src;
-              g.playbackRate.value = grat * jitter;
+              g.playbackRate.value = rt;
               const env = oc.createGain();
-              const gain = env.gain;
-              gain.setValueAtTime(0, at);
-              gain.linearRampToValueAtTime(peak, at + fade);
-              gain.linearRampToValueAtTime(0, at + gsize);
+              env.gain.value = 0; // default is 1: first sample of every grain could pop before the envelope kicks in
+              const curve = new Float32Array(GRAIN_CURVE.length);
+              for (let k = 0; k < curve.length; k++) curve[k] = GRAIN_CURVE[k] * peak;
+              env.gain.setValueCurveAtTime(curve, at, gsize);
               g.connect(env); env.connect(grainOut);
-              g.start(at, offset, gsize + 0.02);
+              g.start(at, offset, need);
               g.stop(at + gsize + 0.02);
               gt = at + 1 / gdens;
             }
@@ -2745,6 +2748,14 @@
         try {
           const { channels, sampleRate } = await renderOffline((frac, stage) => setExportProgress(frac, stage));
           setExportProgress(0.86, "ENCODING");
+          // hard clipping at 16-bit sounds like crackle: if the bounce goes over full scale, scale it down to just under
+          let peakAbs = 0;
+          for (const ch of channels) for (let i = 0; i < ch.length; i++) { const a = ch[i] < 0 ? -ch[i] : ch[i]; if (a > peakAbs) peakAbs = a; }
+          if (peakAbs > 0.99) {
+            const k = 0.99 / peakAbs;
+            for (const ch of channels) for (let i = 0; i < ch.length; i++) ch[i] *= k;
+            flashStatus(`EXPORT: LEVEL -${(20 * Math.log10(peakAbs / 0.99)).toFixed(1)} dB (WAS CLIPPING)`, 3500);
+          }
           let blob, ext;
           if (exportFmt === "mp3") {
             blob = await encodeMp3(channels, sampleRate, (f) => setExportProgress(0.86 + 0.13 * f, "ENCODING MP3"));
